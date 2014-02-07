@@ -34,7 +34,7 @@ static PyTypeObject PendingCallType;
 
 static inline int PendingCall_Check (PyObject *o)
 {
-    return (o->ob_type == &PendingCallType)
+    return (Py_TYPE(o) == &PendingCallType)
             || PyObject_IsInstance(o, (PyObject *)&PendingCallType);
 }
 
@@ -113,15 +113,15 @@ _pending_call_notify_function(DBusPendingCall *pc,
             if (!ret) {
                 PyErr_Print();
             }
-            Py_XDECREF(ret);
-            Py_DECREF(msg_obj);
+            Py_CLEAR(ret);
+            Py_CLEAR(msg_obj);
         }
         /* else OOM has happened - not a lot we can do about that,
          * except possibly making it fatal (FIXME?) */
     }
 
 release:
-    Py_XDECREF(handler);
+    Py_CLEAR(handler);
     PyGILState_Release(gil);
 }
 
@@ -151,8 +151,8 @@ DBusPyPendingCall_ConsumeDBusPendingCall(DBusPendingCall *pc,
     PendingCall *self = PyObject_New(PendingCall, &PendingCallType);
 
     if (!list || !self) {
-        Py_XDECREF(list);
-        Py_XDECREF(self);
+        Py_CLEAR(list);
+        Py_CLEAR(self);
         Py_BEGIN_ALLOW_THREADS
         dbus_pending_call_cancel(pc);
         dbus_pending_call_unref(pc);
@@ -177,8 +177,8 @@ DBusPyPendingCall_ConsumeDBusPendingCall(DBusPendingCall *pc,
         PyErr_NoMemory();
         /* DECREF twice - one for the INCREF and one for the allocation */
         Py_DECREF(list);
-        Py_DECREF(list);
-        Py_DECREF(self);
+        Py_CLEAR(list);
+        Py_CLEAR(self);
         Py_BEGIN_ALLOW_THREADS
         dbus_pending_call_cancel(pc);
         dbus_pending_call_unref(pc);
@@ -206,7 +206,7 @@ DBusPyPendingCall_ConsumeDBusPendingCall(DBusPendingCall *pc,
         _pending_call_notify_function(pc, list);
     }
 
-    Py_DECREF(list);
+    Py_CLEAR(list);
     self->pc = pc;
     return (PyObject *)self;
 }
@@ -233,8 +233,7 @@ static PyMethodDef PendingCall_tp_methods[] = {
 };
 
 static PyTypeObject PendingCallType = {
-    PyObject_HEAD_INIT(DEFERRED_ADDRESS(&PyType_Type))
-    0,
+    PyVarObject_HEAD_INIT(DEFERRED_ADDRESS(&PyType_Type), 0)
     "dbus.lowlevel.PendingCall",
     sizeof(PendingCall),
     0,
@@ -285,6 +284,8 @@ dbus_py_init_pending_call (void)
 dbus_bool_t
 dbus_py_insert_pending_call (PyObject *this_module)
 {
+    /* PyModule_AddObject steals a ref */
+    Py_INCREF (&PendingCallType);
     if (PyModule_AddObject (this_module, "PendingCall",
                             (PyObject *)&PendingCallType) < 0) return 0;
     return 1;

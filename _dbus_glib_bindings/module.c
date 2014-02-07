@@ -28,7 +28,11 @@
 #include <dbus/dbus-glib.h>
 #include <dbus/dbus-glib-lowlevel.h>
 
+#ifdef PY3
+PyMODINIT_FUNC PyInit__dbus_glib_bindings(void);
+#else
 PyMODINIT_FUNC init_dbus_glib_bindings(void);
+#endif
 
 #if defined(__GNUC__)
 #   if __GNUC__ >= 3
@@ -115,22 +119,22 @@ DBusGMainLoop (PyObject *always_null UNUSED, PyObject *args, PyObject *kwargs)
     if (mainloop && set_as_default) {
         if (!_dbus_bindings_module) {
             PyErr_SetString(PyExc_ImportError, "_dbus_bindings not imported");
-            Py_DECREF(mainloop);
+            Py_CLEAR(mainloop);
             return NULL;
         }
         function = PyObject_GetAttrString(_dbus_bindings_module,
                                           "set_default_main_loop");
         if (!function) {
-            Py_DECREF(mainloop);
+            Py_CLEAR(mainloop);
             return NULL;
         }
         result = PyObject_CallFunctionObjArgs(function, mainloop, NULL);
-        Py_DECREF(function);
+        Py_CLEAR(function);
         if (!result) {
-            Py_DECREF(mainloop);
+            Py_CLEAR(mainloop);
             return NULL;
         }
-        Py_DECREF(result);
+        Py_CLEAR(result);
     }
     return mainloop;
 }
@@ -170,6 +174,33 @@ static PyMethodDef module_functions[] = {
     {NULL, NULL, 0, NULL}
 };
 
+#ifdef PY3
+PyMODINIT_FUNC
+PyInit__dbus_glib_bindings(void)
+{
+    PyObject *this_module;
+
+    static struct PyModuleDef moduledef = {
+        PyModuleDef_HEAD_INIT,
+        "_dbus_glib_bindings",  /* m_name */
+        module_doc,             /* m_doc */
+        -1,                     /* m_size */
+        module_functions,       /* m_methods */
+        NULL,                   /* m_reload */
+        NULL,                   /* m_traverse */
+        NULL,                   /* m_clear */
+        NULL                    /* m_free */
+    };
+
+    if (import_dbus_bindings("_dbus_glib_bindings") < 0)
+        return NULL;
+
+    if (!(this_module = PyModule_Create(&moduledef))) {
+        return NULL;
+    }
+    return this_module;
+}
+#else
 PyMODINIT_FUNC
 init_dbus_glib_bindings(void)
 {
@@ -180,5 +211,6 @@ init_dbus_glib_bindings(void)
                                   module_doc);
     if (!this_module) return;
 }
+#endif
 
 /* vim:set ft=c cino< sw=4 sts=4 et: */

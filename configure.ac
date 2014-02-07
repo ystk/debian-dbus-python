@@ -4,8 +4,8 @@ AC_PREREQ(2.59c)
 dnl If not 1, append datestamp to the version number
 m4_define(dbus_python_released, 1)
 dnl The dbus-python version number (must actually be numeric at the moment)
-m4_define(dbus_python_major_version, 0)
-m4_define(dbus_python_minor_version, 83)
+m4_define(dbus_python_major_version, 1)
+m4_define(dbus_python_minor_version, 1)
 m4_define(dbus_python_micro_version, 1)
 
 m4_define(dbus_python_maybe_datestamp,
@@ -31,7 +31,7 @@ AC_SUBST(DBUS_PYTHON_MICRO_VERSION, dbus_python_micro_version)
 AC_CONFIG_SRCDIR([_dbus_bindings/module.c])
 AM_CONFIG_HEADER(config.h)
 
-AM_INIT_AUTOMAKE([1.9])
+AM_INIT_AUTOMAKE([1.9 -Wno-portability])
 
 AC_CANONICAL_BUILD
 AC_CANONICAL_HOST
@@ -44,13 +44,31 @@ dnl (copied from libglade/configure.in)
 m4_define([_LT_AC_TAGCONFIG],[])
 
 AC_PROG_LIBTOOL
+AM_PROG_CC_C_O
 
-AM_PATH_PYTHON(2.4.0)
+AM_PATH_PYTHON([2.6])
 
 AM_CHECK_PYTHON_HEADERS(,[AC_MSG_ERROR(could not find Python headers)])
 
-PLATFORM=`$PYTHON -c "from distutils import util; print util.get_platform()"`
+# This command exits 0 (success) if sys.version >= "3", or 1 (failure)
+# if sys.version < "3" (i.e. starts with "2").
+AM_CONDITIONAL([HAVE_PYTHON_3],
+  [$PYTHON -c "import sys; sys.exit(sys.version < '3')"])
+
+PLATFORM=`$PYTHON -c "from __future__ import print_function; from distutils import util; print(util.get_platform())"`
 AC_SUBST(PLATFORM)
+
+AC_ARG_VAR([PYTHON_LIBS], [LDFLAGS for Python, overriding output of python2.x-config --ldflags, e.g. "-L/opt/misc/lib -lpython2.7"])
+
+if test "${PYTHON_LIBS+set}" = set; then
+  AC_MSG_NOTICE([PYTHON_LIBS overridden to: $PYTHON_LIBS])
+else
+  AC_MSG_CHECKING([for Python library linker flags])
+  PYTHON_LIBS=`$PYTHON-config --ldflags`
+  AC_MSG_RESULT([$PYTHON_LIBS])
+fi
+
+AC_SUBST([PYTHON_LIBS])
 
 dnl Building documentation
 
@@ -127,6 +145,7 @@ if test "${enable_html_docs}" != no; then
     DBUS_PY_ADD_RST2HTMLFLAG([--no-raw])
     DBUS_PY_ADD_RST2HTMLFLAG([--no-file-insertion])
     DBUS_PY_ADD_RST2HTMLFLAG([--cloak-email-addresses])
+    DBUS_PY_ADD_RST2HTMLFLAG([--input-encoding=UTF-8])
   fi
 fi
 AC_SUBST([RST2HTML])
@@ -135,16 +154,19 @@ AC_SUBST([RST2HTMLFLAGS])
 AM_CONDITIONAL([ENABLE_API_DOCS], [test "$enable_api_docs" != no])
 AM_CONDITIONAL([ENABLE_DOCS], [test "$enable_html_docs" != no])
 
-PKG_CHECK_MODULES(DBUS, [dbus-1 >= 1.0])
+PKG_CHECK_MODULES(DBUS, [dbus-1 >= 1.4])
 PKG_CHECK_MODULES(DBUS_GLIB, [dbus-glib-1 >= 0.70])
 
-dnl avoid deprecated stuff if possible
-AC_CHECK_LIB([dbus-1], [dbus_watch_get_unix_fd],
-             [AC_DEFINE([HAVE_DBUS_WATCH_GET_UNIX_FD], [],
-                        [Define if libdbus-1 has dbus_watch_get_unix_fd])],
-             [:], [$DBUS_LIBS])
+dbuspy_save_CFLAGS="$CFLAGS"
+dbuspy_save_LIBS="$LIBS"
+CFLAGS="$CFLAGS $DBUS_CFLAGS"
+LIBS="$CFLAGS $DBUS_LIBS"
+AC_CHECK_TYPES([DBusBasicValue], [], [], [#include <dbus/dbus.h>])
+AC_CHECK_FUNCS([dbus_validate_utf8])
+CFLAGS="$dbuspy_save_CFLAGS"
+LIBS="$dbuspy_save_LIBS"
 
-TP_COMPILER_WARNINGS([CFLAGS], [test] dbus_python_released [= 0],
+TP_COMPILER_WARNINGS([CFLAGS_WARNINGS], [test] dbus_python_released [= 0],
   [all \
    extra \
    declaration-after-statement \
@@ -158,18 +180,13 @@ TP_COMPILER_WARNINGS([CFLAGS], [test] dbus_python_released [= 0],
    pointer-arith \
    format-security \
    init-self],
-  [missing-field-initializers])
+  [missing-field-initializers \
+   unused-parameter])
 
 JH_ADD_CFLAG([-std=c9x])
 JH_ADD_CFLAG([-fno-strict-aliasing])
 
-AC_ARG_ENABLE(Werror,
-AC_HELP_STRING([--enable-Werror],
-               [Treat warnings as errors, if the compiler supports it]),
-enable_Werror=$enableval, enable_Werror=no)
-if test "x$enable_Werror" = xyes; then
-  JH_ADD_CFLAG([-Werror])
-fi
+CFLAGS="$CFLAGS $CFLAGS_WARNINGS"
 
 ifelse(dbus_python_released, 1,
     [ # version x.y.z - disable coding style checks by default

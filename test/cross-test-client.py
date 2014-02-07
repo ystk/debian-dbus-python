@@ -20,19 +20,31 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-from time import sleep
+from __future__ import print_function, unicode_literals
 import logging
 
-import gobject
+from gi.repository import GObject as gobject
 
-from dbus import SessionBus, Interface, Array, Byte, Double, Boolean, ByteArray, Int16, Int32, Int64, UInt16, UInt32, UInt64, String, UTF8String, Struct, Dictionary
-from dbus.service import BusName
+from dbus import (
+    Array, Boolean, Byte, ByteArray, Double, Int16, Int32, Int64,
+    Interface, SessionBus, String, UInt16, UInt32, UInt64)
+from dbus._compat import is_py2, is_py3
 import dbus.glib
 
-from crosstest import CROSS_TEST_PATH, CROSS_TEST_BUS_NAME,\
-                      INTERFACE_SINGLE_TESTS, INTERFACE_TESTS,\
-                      INTERFACE_SIGNAL_TESTS, INTERFACE_CALLBACK_TESTS,\
-                      SignalTestsImpl
+if is_py2:
+    from dbus import UTF8String
+
+from crosstest import (
+    CROSS_TEST_BUS_NAME, CROSS_TEST_PATH, INTERFACE_CALLBACK_TESTS,
+    INTERFACE_SIGNAL_TESTS, INTERFACE_SINGLE_TESTS, INTERFACE_TESTS,
+    SignalTestsImpl)
+
+if is_py3:
+    def make_long(n):
+        return n
+else:
+    def make_long(n):
+        return long(n)
 
 
 logging.basicConfig()
@@ -47,9 +59,9 @@ class Client(SignalTestsImpl):
     def quit(self):
         for x in self.expected:
             self.fail_id += 1
-            print "%s fail %d" % (x, self.fail_id)
+            print("%s fail %d" % (x, self.fail_id))
             s = "report %d: reply to %s didn't arrive" % (self.fail_id, x)
-            print s
+            print(s)
             logger.error(s)
         logger.info("asking server to Exit")
         Interface(self.obj, INTERFACE_TESTS).Exit(reply_handler=self.quit_reply_handler, error_handler=self.quit_error_handler)
@@ -72,40 +84,42 @@ class Client(SignalTestsImpl):
         self.expected.discard('%s.Trigger' % INTERFACE_SIGNAL_TESTS)
         if (input1, input2) != (42, 23):
             self.fail_id += 1
-            print "%s.Trigger fail %d" % (INTERFACE_SIGNAL_TESTS, self.fail_id)
+            print("%s.Trigger fail %d" % 
+                  (INTERFACE_SIGNAL_TESTS, self.fail_id))
             s = ("report %d: expected (42,23), got %r"
                  % (self.fail_id, (input1, input2)))
             logger.error(s)
-            print s
+            print(s)
         else:
-            print "%s.Trigger pass" % INTERFACE_SIGNAL_TESTS
+            print("%s.Trigger pass" % INTERFACE_SIGNAL_TESTS)
         self.quit()
 
-    def assert_method_matches(self, interface, check_fn, check_arg, member, *args):
+    def assert_method_matches(self, interface, check_fn, check_arg, member, 
+                              *args):
         if_obj = Interface(self.obj, interface)
         method = getattr(if_obj, member)
         try:
             real_ret = method(*args)
-        except Exception, e:
+        except Exception as e:
             self.fail_id += 1
-            print "%s.%s fail %d" % (interface, member, self.fail_id)
+            print("%s.%s fail %d" % (interface, member, self.fail_id))
             s = ("report %d: %s.%s%r: raised %r \"%s\""
                  % (self.fail_id, interface, member, args, e, e))
-            print s
+            print(s)
             logger.error(s)
             __import__('traceback').print_exc()
             return
         try:
             check_fn(real_ret, check_arg)
-        except Exception, e:
+        except Exception as e:
             self.fail_id += 1
-            print "%s.%s fail %d" % (interface, member, self.fail_id)
+            print("%s.%s fail %d" % (interface, member, self.fail_id))
             s = ("report %d: %s.%s%r: %s"
                  % (self.fail_id, interface, member, args, e))
-            print s
+            print(s)
             logger.error(s)
             return
-        print "%s.%s pass" % (interface, member)
+        print("%s.%s pass" % (interface, member))
 
     def assert_method_eq(self, interface, ret, member, *args):
         def equals(real_ret, exp):
@@ -119,10 +133,10 @@ class Client(SignalTestsImpl):
                         % (getattr(exp, 'variant_level', 0), real_ret,
                            real_ret.variant_level))
             if isinstance(exp, list) or isinstance(exp, tuple):
-                for i in xrange(len(exp)):
+                for i in range(len(exp)):
                     try:
                         equals(real_ret[i], exp[i])
-                    except AssertionError, e:
+                    except AssertionError as e:
                         if not isinstance(e.args, tuple):
                             e.args = (e.args,)
                         e.args = e.args + ('(at position %d in sequence)' % i,)
@@ -131,7 +145,7 @@ class Client(SignalTestsImpl):
                 for k in exp:
                     try:
                         equals(real_ret[k], exp[k])
-                    except AssertionError, e:
+                    except AssertionError as e:
                         if not isinstance(e.args, tuple):
                             e.args = (e.args,)
                         e.args = e.args + ('(at key %r in dict)' % k,)
@@ -161,20 +175,20 @@ class Client(SignalTestsImpl):
         self.expected.discard('%s.Trigger' % INTERFACE_TESTS)
         if sender_path != '/Where/Ever':
             self.fail_id += 1
-            print "%s.Trigger fail %d" % (INTERFACE_TESTS, self.fail_id)
+            print("%s.Trigger fail %d" % (INTERFACE_TESTS, self.fail_id))
             s = ("report %d: expected signal from /Where/Ever, got %r"
                  % (self.fail_id, sender_path))
-            print s
+            print(s)
             logger.error(s)
         elif param != 42:
             self.fail_id += 1
-            print "%s.Trigger fail %d" % (INTERFACE_TESTS, self.fail_id)
+            print("%s.Trigger fail %d" % (INTERFACE_TESTS, self.fail_id))
             s = ("report %d: expected signal param 42, got %r"
-                 % (self.fail_id, parameter))
-            print s
+                 % (self.fail_id, param))
+            print(s)
             logger.error(s)
         else:
-            print "%s.Trigger pass" % INTERFACE_TESTS
+            print("%s.Trigger pass" % INTERFACE_TESTS)
 
     def trigger_returned_cb(self):
         logger.info('method/signal: Trigger() returned')
@@ -202,7 +216,10 @@ class Client(SignalTestsImpl):
                                 path_keyword='sender_path')
         logger.info("method/signal: Triggering signal")
         self.expected.add('%s.Trigger' % INTERFACE_TESTS)
-        Interface(obj, INTERFACE_TESTS).Trigger(u'/Where/Ever', dbus.UInt64(42), reply_handler=self.trigger_returned_cb, error_handler=self.trigger_error_handler)
+        Interface(obj, INTERFACE_TESTS).Trigger(
+            '/Where/Ever', dbus.UInt64(42), 
+            reply_handler=self.trigger_returned_cb, 
+            error_handler=self.trigger_error_handler)
 
     def trigger_error_handler(self, e):
         logger.error("method/signal: %s %s", e.__class__, e)
@@ -217,20 +234,22 @@ class Client(SignalTestsImpl):
         # "Single tests"
         if have_signatures:
             self.assert_method_eq(INTERFACE_SINGLE_TESTS, 6, 'Sum', [1, 2, 3])
-            self.assert_method_eq(INTERFACE_SINGLE_TESTS, 6, 'Sum', ['\x01', '\x02', '\x03'])
+            self.assert_method_eq(INTERFACE_SINGLE_TESTS, 6, 'Sum', 
+                                  [b'\x01', b'\x02', b'\x03'])
         self.assert_method_eq(INTERFACE_SINGLE_TESTS, 6, 'Sum', [Byte(1), Byte(2), Byte(3)])
-        self.assert_method_eq(INTERFACE_SINGLE_TESTS, 6, 'Sum', ByteArray('\x01\x02\x03'))
+        self.assert_method_eq(INTERFACE_SINGLE_TESTS, 6, 'Sum', ByteArray(b'\x01\x02\x03'))
 
         # Main tests
-        self.assert_method_eq(INTERFACE_TESTS, String(u'foo', variant_level=1), 'Identity', String('foo'))
-        self.assert_method_eq(INTERFACE_TESTS, String(u'foo', variant_level=1), 'Identity', UTF8String('foo'))
+        self.assert_method_eq(INTERFACE_TESTS, String('foo', variant_level=1), 'Identity', String('foo'))
+        if is_py2:
+            self.assert_method_eq(INTERFACE_TESTS, String('foo', variant_level=1), 'Identity', UTF8String('foo'))
         self.assert_method_eq(INTERFACE_TESTS, Byte(42, variant_level=1), 'Identity', Byte(42))
         self.assert_method_eq(INTERFACE_TESTS, Byte(42, variant_level=23), 'Identity', Byte(42, variant_level=23))
         self.assert_method_eq(INTERFACE_TESTS, Double(42.5, variant_level=1), 'Identity', 42.5)
         self.assert_method_eq(INTERFACE_TESTS, Double(-42.5, variant_level=1), 'Identity', -42.5)
 
         if have_signatures:
-            self.assert_method_eq(INTERFACE_TESTS, String(u'foo', variant_level=1), 'Identity', 'foo')
+            self.assert_method_eq(INTERFACE_TESTS, String('foo', variant_level=1), 'Identity', 'foo')
             self.assert_method_eq(INTERFACE_TESTS, Byte(42, variant_level=1), 'Identity', Byte(42))
             self.assert_method_eq(INTERFACE_TESTS, Double(42.5, variant_level=1), 'Identity', Double(42.5))
             self.assert_method_eq(INTERFACE_TESTS, Double(-42.5, variant_level=1), 'Identity', -42.5)
@@ -246,9 +265,12 @@ class Client(SignalTestsImpl):
             self.assert_method_eq(INTERFACE_TESTS, i, 'IdentityUInt16', UInt16(i))
         for i in (-0x7fffffff-1, 0, 42, 0x7fffffff):
             self.assert_method_eq(INTERFACE_TESTS, i, 'IdentityInt32', Int32(i))
-        for i in (0L, 42L, 0xffffffffL):
+        for i in (0, 42, 0xffffffff):
+            i = make_long(i)
             self.assert_method_eq(INTERFACE_TESTS, i, 'IdentityUInt32', UInt32(i))
-        MANY = 0x8000L * 0x10000L * 0x10000L * 0x10000L
+        MANY = 1
+        for n in (0x8000, 0x10000, 0x10000, 0x10000):
+            MANY *= make_long(n)
         for i in (-MANY, 0, 42, MANY-1):
             self.assert_method_eq(INTERFACE_TESTS, i, 'IdentityInt64', Int64(i))
         for i in (0, 42, 2*MANY - 1):
@@ -257,11 +279,12 @@ class Client(SignalTestsImpl):
         self.assert_method_eq(INTERFACE_TESTS, 42.3, 'IdentityDouble', 42.3)
         for i in ('', 'foo'):
             self.assert_method_eq(INTERFACE_TESTS, i, 'IdentityString', i)
-        for i in (u'\xa9', '\xc2\xa9'):
-            self.assert_method_eq(INTERFACE_TESTS, u'\xa9', 'IdentityString', i)
+        for i in ('\xa9', b'\xc2\xa9'):
+            self.assert_method_eq(INTERFACE_TESTS, '\xa9', 'IdentityString', i)
 
         if have_signatures:
-            self.assert_method_eq(INTERFACE_TESTS, Byte(0x42), 'IdentityByte', '\x42')
+            self.assert_method_eq(INTERFACE_TESTS, Byte(0x42), 
+                                  'IdentityByte', b'\x42')
             self.assert_method_eq(INTERFACE_TESTS, True, 'IdentityBool', 42)
             self.assert_method_eq(INTERFACE_TESTS, 42, 'IdentityInt16', 42)
             self.assert_method_eq(INTERFACE_TESTS, 42, 'IdentityUInt16', 42)
@@ -271,13 +294,13 @@ class Client(SignalTestsImpl):
             self.assert_method_eq(INTERFACE_TESTS, 42, 'IdentityUInt64', 42)
             self.assert_method_eq(INTERFACE_TESTS, 42.0, 'IdentityDouble', 42)
 
-        self.assert_method_eq(INTERFACE_TESTS, [Byte('\x01', variant_level=1),
-                                                Byte('\x02', variant_level=1),
-                                                Byte('\x03', variant_level=1)],
+        self.assert_method_eq(INTERFACE_TESTS, [Byte(b'\x01', variant_level=1),
+                                                Byte(b'\x02', variant_level=1),
+                                                Byte(b'\x03', variant_level=1)],
                                                'IdentityArray',
-                                               Array([Byte('\x01'),
-                                                      Byte('\x02'),
-                                                      Byte('\x03')],
+                                               Array([Byte(b'\x01'),
+                                                      Byte(b'\x02'),
+                                                      Byte(b'\x03')],
                                                      signature='v'))
 
         self.assert_method_eq(INTERFACE_TESTS, [Int32(1, variant_level=1),
@@ -288,9 +311,9 @@ class Client(SignalTestsImpl):
                                                       Int32(2),
                                                       Int32(3)],
                                                      signature='v'))
-        self.assert_method_eq(INTERFACE_TESTS, [String(u'a', variant_level=1),
-                                                String(u'b', variant_level=1),
-                                                String(u'c', variant_level=1)],
+        self.assert_method_eq(INTERFACE_TESTS, [String('a', variant_level=1),
+                                                String('b', variant_level=1),
+                                                String('c', variant_level=1)],
                                                'IdentityArray',
                                                Array([String('a'),
                                                       String('b'),
@@ -298,11 +321,11 @@ class Client(SignalTestsImpl):
                                                      signature='v'))
 
         if have_signatures:
-            self.assert_method_eq(INTERFACE_TESTS, [Byte('\x01', variant_level=1),
-                                                    Byte('\x02', variant_level=1),
-                                                    Byte('\x03', variant_level=1)],
+            self.assert_method_eq(INTERFACE_TESTS, [Byte(b'\x01', variant_level=1),
+                                                    Byte(b'\x02', variant_level=1),
+                                                    Byte(b'\x03', variant_level=1)],
                                                    'IdentityArray',
-                                                   ByteArray('\x01\x02\x03'))
+                                                   ByteArray(b'\x01\x02\x03'))
             self.assert_method_eq(INTERFACE_TESTS, [Int32(1, variant_level=1),
                                                     Int32(2, variant_level=1),
                                                     Int32(3, variant_level=1)],
@@ -310,18 +333,20 @@ class Client(SignalTestsImpl):
                                                    [Int32(1),
                                                     Int32(2),
                                                     Int32(3)])
-            self.assert_method_eq(INTERFACE_TESTS, [String(u'a', variant_level=1),
-                                                    String(u'b', variant_level=1),
-                                                    String(u'c', variant_level=1)],
+            self.assert_method_eq(INTERFACE_TESTS, [String('a', variant_level=1),
+                                                    String('b', variant_level=1),
+                                                    String('c', variant_level=1)],
                                                    'IdentityArray',
                                                    ['a','b','c'])
 
         self.assert_method_eq(INTERFACE_TESTS,
                               [Byte(1), Byte(2), Byte(3)],
                               'IdentityByteArray',
-                              ByteArray('\x01\x02\x03'))
+                              ByteArray(b'\x01\x02\x03'))
         if have_signatures:
-            self.assert_method_eq(INTERFACE_TESTS, [1,2,3], 'IdentityByteArray', ['\x01', '\x02', '\x03'])
+            self.assert_method_eq(INTERFACE_TESTS, [1,2,3], 
+                                  'IdentityByteArray', 
+                                  [b'\x01', b'\x02', b'\x03'])
         self.assert_method_eq(INTERFACE_TESTS, [False,True], 'IdentityBoolArray', [False,True])
         if have_signatures:
             self.assert_method_eq(INTERFACE_TESTS, [False,True,True], 'IdentityBoolArray', [0,1,2])

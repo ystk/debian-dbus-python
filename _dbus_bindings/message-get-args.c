@@ -27,6 +27,7 @@
 #define PY_SIZE_T_CLEAN 1
 
 #define DBG_IS_TOO_VERBOSE
+#include "compat-internal.h"
 #include "types-internal.h"
 #include "message-internal.h"
 
@@ -42,9 +43,11 @@ char dbus_py_Message_get_args_list__doc__[] = (
 "       it's off by default for consistency.\n"
 "\n"
 "       If false (default), convert them into a dbus.Array of Bytes.\n"
+#ifndef PY3
 "   `utf8_strings` : bool\n"
 "       If true, return D-Bus strings as Python 8-bit strings (of UTF-8).\n"
 "       If false (default), return D-Bus strings as Python unicode objects.\n"
+#endif
 "\n"
 "Most of the type mappings should be fairly obvious:\n"
 "\n"
@@ -70,7 +73,9 @@ char dbus_py_Message_get_args_list__doc__[] = (
 
 typedef struct {
     int byte_arrays;
+#ifndef PY3
     int utf8_strings;
+#endif
 } Message_get_args_options;
 
 static PyObject *_message_iter_get_pyobject(DBusMessageIter *iter,
@@ -94,11 +99,10 @@ _message_iter_append_all_to_list(DBusMessageIter *iter, PyObject *list,
 #ifdef USING_DBG
         fprintf(stderr, "DBG/%ld: appending to list: %p == ", (long)getpid(), item);
         PyObject_Print(item, stderr, 0);
-        fprintf(stderr, " of type %p\n", item->ob_type);
+        fprintf(stderr, " of type %p\n", Py_TYPE(item));
 #endif
         ret = PyList_Append(list, item);
-        Py_DECREF(item);
-        item = NULL;
+        Py_CLEAR(item);
         if (ret < 0) return -1;
 #ifdef USING_DBG
         fprintf(stderr, "DBG/%ld: list now contains: ", (long)getpid());
@@ -133,7 +137,7 @@ _message_iter_get_dict(DBusMessageIter *iter,
         return NULL;
     }
     status = PyDict_SetItem(kwargs, dbus_py_signature_const, sig);
-    Py_DECREF(sig);
+    Py_CLEAR(sig);
     if (status < 0) {
         return NULL;
     }
@@ -155,24 +159,24 @@ _message_iter_get_dict(DBusMessageIter *iter,
 
         key = _message_iter_get_pyobject(&kv, opts, 0);
         if (!key) {
-            Py_DECREF(ret);
+            Py_CLEAR(ret);
             return NULL;
         }
         dbus_message_iter_next(&kv);
 
         value = _message_iter_get_pyobject(&kv, opts, 0);
         if (!value) {
-            Py_DECREF(key);
-            Py_DECREF(ret);
+            Py_CLEAR(key);
+            Py_CLEAR(ret);
             return NULL;
         }
 
         status = PyDict_SetItem(ret, key, value);
-        Py_DECREF(key);
-        Py_DECREF(value);
+        Py_CLEAR(key);
+        Py_CLEAR(value);
 
         if (status < 0) {
-            Py_DECREF(ret);
+            Py_CLEAR(ret);
             return NULL;
         }
         dbus_message_iter_next(&entries);
@@ -187,21 +191,7 @@ _message_iter_get_pyobject(DBusMessageIter *iter,
                            Message_get_args_options *opts,
                            long variant_level)
 {
-    union {
-        const char *s;
-        unsigned char y;
-        dbus_bool_t b;
-        double d;
-        float f;
-        dbus_uint16_t u16;
-        dbus_int16_t i16;
-        dbus_uint32_t u32;
-        dbus_int32_t i32;
-#if defined(DBUS_HAVE_INT64) && defined(HAVE_LONG_LONG)
-        dbus_uint64_t u64;
-        dbus_int64_t i64;
-#endif
-    } u;
+    DBusBasicValue u;
     int type = dbus_message_iter_get_arg_type(iter);
     PyObject *args = NULL;
     PyObject *kwargs = NULL;
@@ -213,69 +203,77 @@ _message_iter_get_pyobject(DBusMessageIter *iter,
     if (variant_level > 0 && type != DBUS_TYPE_VARIANT) {
         PyObject *variant_level_int;
 
-        variant_level_int = PyInt_FromLong(variant_level);
+        variant_level_int = NATIVEINT_FROMLONG(variant_level);
         if (!variant_level_int) {
             return NULL;
         }
         kwargs = PyDict_New();
         if (!kwargs) {
-            Py_DECREF(variant_level_int);
+            Py_CLEAR(variant_level_int);
             return NULL;
         }
         if (PyDict_SetItem(kwargs, dbus_py_variant_level_const,
                            variant_level_int) < 0) {
-            Py_DECREF(variant_level_int);
-            Py_DECREF(kwargs);
+            Py_CLEAR(variant_level_int);
+            Py_CLEAR(kwargs);
             return NULL;
         }
-        Py_DECREF(variant_level_int);
+        Py_CLEAR(variant_level_int);
     }
     /* From here down you need to break from the switch to exit, so the
      * dict is freed if necessary
      */
 
     switch (type) {
+        PyObject *unicode;
+
         case DBUS_TYPE_STRING:
             DBG("%s", "found a string");
-            dbus_message_iter_get_basic(iter, &u.s);
+            dbus_message_iter_get_basic(iter, &u.str);
+#ifndef PY3
             if (opts->utf8_strings) {
-                args = Py_BuildValue("(s)", u.s);
+                args = Py_BuildValue("(s)", u.str);
                 if (!args) break;
                 ret = PyObject_Call((PyObject *)&DBusPyUTF8String_Type,
                                     args, kwargs);
             }
             else {
-                args = Py_BuildValue("(N)", PyUnicode_DecodeUTF8(u.s,
-                                                                 strlen(u.s),
-                                                                 NULL));
+#endif
+                unicode = PyUnicode_DecodeUTF8(u.str, strlen(u.str), NULL);
+                if (!unicode) {
+                    break;
+                }
+                args = Py_BuildValue("(N)", unicode);
                 if (!args) {
                     break;
                 }
                 ret = PyObject_Call((PyObject *)&DBusPyString_Type,
                                     args, kwargs);
+#ifndef PY3
             }
+#endif
             break;
 
         case DBUS_TYPE_SIGNATURE:
             DBG("%s", "found a signature");
-            dbus_message_iter_get_basic(iter, &u.s);
-            args = Py_BuildValue("(s)", u.s);
+            dbus_message_iter_get_basic(iter, &u.str);
+            args = Py_BuildValue("(s)", u.str);
             if (!args) break;
             ret = PyObject_Call((PyObject *)&DBusPySignature_Type, args, kwargs);
             break;
 
         case DBUS_TYPE_OBJECT_PATH:
             DBG("%s", "found an object path");
-            dbus_message_iter_get_basic(iter, &u.s);
-            args = Py_BuildValue("(s)", u.s);
+            dbus_message_iter_get_basic(iter, &u.str);
+            args = Py_BuildValue("(s)", u.str);
             if (!args) break;
             ret = PyObject_Call((PyObject *)&DBusPyObjectPath_Type, args, kwargs);
             break;
 
         case DBUS_TYPE_DOUBLE:
             DBG("%s", "found a double");
-            dbus_message_iter_get_basic(iter, &u.d);
-            args = Py_BuildValue("(f)", u.d);
+            dbus_message_iter_get_basic(iter, &u.dbl);
+            args = Py_BuildValue("(f)", u.dbl);
             if (!args) break;
             ret = PyObject_Call((PyObject *)&DBusPyDouble_Type, args, kwargs);
             break;
@@ -283,6 +281,8 @@ _message_iter_get_pyobject(DBusMessageIter *iter,
 #ifdef WITH_DBUS_FLOAT32
         case DBUS_TYPE_FLOAT:
             DBG("%s", "found a float");
+            /* FIXME: DBusBasicValue will need to grow a float member if
+             * float32 becomes supported */
             dbus_message_iter_get_basic(iter, &u.f);
             args = Py_BuildValue("(f)", (double)u.f);
             if (!args) break;
@@ -322,6 +322,21 @@ _message_iter_get_pyobject(DBusMessageIter *iter,
             ret = PyObject_Call((PyObject *)&DBusPyUInt32_Type, args, kwargs);
             break;
 
+#ifdef DBUS_TYPE_UNIX_FD
+        case DBUS_TYPE_UNIX_FD:
+            DBG("%s", "found an unix fd");
+            dbus_message_iter_get_basic(iter, &u.fd);
+            args = Py_BuildValue("(i)", u.fd);
+            if (args) {
+                ret = PyObject_Call((PyObject *)&DBusPyUnixFd_Type, args,
+                                    kwargs);
+            }
+            if (u.fd >= 0) {
+                close(u.fd);
+            }
+            break;
+#endif
+
 #if defined(DBUS_HAVE_INT64) && defined(HAVE_LONG_LONG)
         case DBUS_TYPE_INT64:
             DBG("%s", "found an int64");
@@ -349,8 +364,8 @@ _message_iter_get_pyobject(DBusMessageIter *iter,
 
         case DBUS_TYPE_BYTE:
             DBG("%s", "found a byte");
-            dbus_message_iter_get_basic(iter, &u.y);
-            args = Py_BuildValue("(l)", (long)u.y);
+            dbus_message_iter_get_basic(iter, &u.byt);
+            args = Py_BuildValue("(l)", (long)u.byt);
             if (!args)
                 break;
             ret = PyObject_Call((PyObject *)&DBusPyByte_Type, args, kwargs);
@@ -358,8 +373,8 @@ _message_iter_get_pyobject(DBusMessageIter *iter,
 
         case DBUS_TYPE_BOOLEAN:
             DBG("%s", "found a bool");
-            dbus_message_iter_get_basic(iter, &u.b);
-            args = Py_BuildValue("(l)", (long)u.b);
+            dbus_message_iter_get_basic(iter, &u.bool_val);
+            args = Py_BuildValue("(l)", (long)u.bool_val);
             if (!args)
                 break;
             ret = PyObject_Call((PyObject *)&DBusPyBoolean_Type, args, kwargs);
@@ -385,9 +400,19 @@ _message_iter_get_pyobject(DBusMessageIter *iter,
                 DBG("%s", "actually, a byte array...");
                 dbus_message_iter_recurse(iter, &sub);
                 dbus_message_iter_get_fixed_array(&sub,
-                                                  (const unsigned char **)&u.s,
+                                                  (const unsigned char **)&u.str,
                                                   &n);
-                args = Py_BuildValue("(s#)", u.s, (Py_ssize_t)n);
+                if (n == 0 && u.str == NULL) {
+                    /* fd.o #21831: s# turns (NULL, 0) into None, but
+                     * dbus_message_iter_get_fixed_array produces (NULL, 0)
+                     * for an empty byte-blob... */
+                    u.str = "";
+                }
+#ifdef PY3
+                args = Py_BuildValue("(y#)", u.str, (Py_ssize_t)n);
+#else
+                args = Py_BuildValue("(s#)", u.str, (Py_ssize_t)n);
+#endif
                 if (!args) break;
                 ret = PyObject_Call((PyObject *)&DBusPyByteArray_Type,
                                     args, kwargs);
@@ -411,14 +436,13 @@ _message_iter_get_pyobject(DBusMessageIter *iter,
                 dbus_free(sig);
                 if (!sig_obj) break;
                 status = PyDict_SetItem(kwargs, dbus_py_signature_const, sig_obj);
-                Py_DECREF(sig_obj);
+                Py_CLEAR(sig_obj);
                 if (status < 0) break;
                 ret = PyObject_Call((PyObject *)&DBusPyArray_Type,
                                     dbus_py_empty_tuple, kwargs);
                 if (!ret) break;
                 if (_message_iter_append_all_to_list(&sub, ret, opts) < 0) {
-                    Py_DECREF(ret);
-                    ret = NULL;
+                    Py_CLEAR(ret);
                 }
             }
             break;
@@ -433,7 +457,7 @@ _message_iter_get_pyobject(DBusMessageIter *iter,
                 if (!list) break;
                 dbus_message_iter_recurse(iter, &sub);
                 if (_message_iter_append_all_to_list(&sub, list, opts) < 0) {
-                    Py_DECREF(list);
+                    Py_CLEAR(list);
                     break;
                 }
                 tuple = Py_BuildValue("(O)", list);
@@ -444,8 +468,8 @@ _message_iter_get_pyobject(DBusMessageIter *iter,
                     ret = NULL;
                 }
                 /* whether successful or not, we take the same action: */
-                Py_DECREF(list);
-                Py_XDECREF(tuple);
+                Py_CLEAR(list);
+                Py_CLEAR(tuple);
             }
             break;
 
@@ -464,16 +488,21 @@ _message_iter_get_pyobject(DBusMessageIter *iter,
                          "message", type);
     }
 
-    Py_XDECREF(args);
-    Py_XDECREF(kwargs);
+    Py_CLEAR(args);
+    Py_CLEAR(kwargs);
     return ret;
 }
 
 PyObject *
 dbus_py_Message_get_args_list(Message *self, PyObject *args, PyObject *kwargs)
 {
+#ifdef PY3
+    Message_get_args_options opts = { 0 };
+    static char *argnames[] = { "byte_arrays", NULL };
+#else
     Message_get_args_options opts = { 0, 0 };
     static char *argnames[] = { "byte_arrays", "utf8_strings", NULL };
+#endif
     PyObject *list;
     DBusMessageIter iter;
 
@@ -493,10 +522,16 @@ dbus_py_Message_get_args_list(Message *self, PyObject *args, PyObject *kwargs)
                         "arguments");
         return NULL;
     }
+#ifdef PY3
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|i:get_args_list",
+                                     argnames,
+                                     &(opts.byte_arrays))) return NULL;
+#else
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|ii:get_args_list",
                                      argnames,
                                      &(opts.byte_arrays),
                                      &(opts.utf8_strings))) return NULL;
+#endif
     if (!self->msg) return DBusPy_RaiseUnusableMessage();
 
     list = PyList_New(0);
@@ -505,7 +540,7 @@ dbus_py_Message_get_args_list(Message *self, PyObject *args, PyObject *kwargs)
     /* Iterate over args, if any, appending to list */
     if (dbus_message_iter_init(self->msg, &iter)) {
         if (_message_iter_append_all_to_list(&iter, list, &opts) < 0) {
-            Py_DECREF(list);
+            Py_CLEAR(list);
             DBG_EXC("%s", "Message_get_args: appending all to list failed:");
             return NULL;
         }

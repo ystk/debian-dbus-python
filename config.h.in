@@ -9,8 +9,11 @@
 /* dbus-python minor version */
 #undef DBUS_PYTHON_MINOR_VERSION
 
-/* Define if libdbus-1 has dbus_watch_get_unix_fd */
-#undef HAVE_DBUS_WATCH_GET_UNIX_FD
+/* Define to 1 if the system has the type `DBusBasicValue'. */
+#undef HAVE_DBUSBASICVALUE
+
+/* Define to 1 if you have the `dbus_validate_utf8' function. */
+#undef HAVE_DBUS_VALIDATE_UTF8
 
 /* Define to 1 if you have the <dlfcn.h> header file. */
 #undef HAVE_DLFCN_H
@@ -45,6 +48,9 @@
 /* Define to the sub-directory in which libtool stores uninstalled libraries.
    */
 #undef LT_OBJDIR
+
+/* Define to 1 if your C compiler doesn't accept -c and -o together. */
+#undef NO_MINUS_C_MINUS_O
 
 /* Name of package */
 #undef PACKAGE

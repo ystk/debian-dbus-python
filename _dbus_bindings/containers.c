@@ -77,8 +77,7 @@ static struct PyMemberDef Array_tp_members[] = {
 static void
 Array_tp_dealloc (DBusPyArray *self)
 {
-    Py_XDECREF(self->signature);
-    self->signature = NULL;
+    Py_CLEAR(self->signature);
     (PyList_Type.tp_dealloc)((PyObject *)self);
 }
 
@@ -93,22 +92,22 @@ Array_tp_repr(DBusPyArray *self)
     if (!parent_repr) goto finally;
     if (!sig_repr) goto finally;
     if (variant_level > 0) {
-        my_repr = PyString_FromFormat("%s(%s, signature=%s, "
-                                      "variant_level=%ld)",
-                                      self->super.ob_type->tp_name,
-                                      PyString_AS_STRING(parent_repr),
-                                      PyString_AS_STRING(sig_repr),
-                                      variant_level);
+        my_repr = PyUnicode_FromFormat("%s(%V, signature=%V, "
+                                       "variant_level=%ld)",
+                                       Py_TYPE(&self->super)->tp_name,
+                                       REPRV(parent_repr),
+                                       REPRV(sig_repr),
+                                       variant_level);
     }
     else {
-        my_repr = PyString_FromFormat("%s(%s, signature=%s)",
-                                      self->super.ob_type->tp_name,
-                                      PyString_AS_STRING(parent_repr),
-                                      PyString_AS_STRING(sig_repr));
+        my_repr = PyUnicode_FromFormat("%s(%V, signature=%V)",
+                                       Py_TYPE(&self->super)->tp_name,
+                                       REPRV(parent_repr),
+                                       REPRV(sig_repr));
     }
 finally:
-    Py_XDECREF(parent_repr);
-    Py_XDECREF(sig_repr);
+    Py_CLEAR(parent_repr);
+    Py_CLEAR(sig_repr);
     return my_repr;
 }
 
@@ -128,11 +127,12 @@ Array_tp_new (PyTypeObject *cls, PyObject *args, PyObject *kwargs)
         variant_level = PyDict_GetItem(kwargs, dbus_py_variant_level_const);
     }
     if (variant_level) {
-        self->variant_level = PyInt_AsLong(variant_level);
-        if (PyErr_Occurred()) {
-            Py_DECREF((PyObject *)self);
+        long new_variant_level = PyLong_AsLong(variant_level);
+        if (new_variant_level == -1 && PyErr_Occurred()) {
+            Py_CLEAR(self);
             return NULL;
         }
+        self->variant_level = new_variant_level;
     }
     return (PyObject *)self;
 }
@@ -167,37 +167,63 @@ Array_tp_init (DBusPyArray *self, PyObject *args, PyObject *kwargs)
     }
 
     if (signature != Py_None) {
-        const char *c_str = PyString_AS_STRING(signature);
+        const char *c_str;
+        PyObject *signature_as_bytes;
+
+        if (
+#ifdef PY3
+            !PyUnicode_Check(signature)
+#else
+            !PyBytes_Check(signature)
+#endif
+            )
+        {
+            PyErr_SetString(PyExc_TypeError, "str expected");
+            Py_CLEAR(signature);
+            return -1;
+        }
+#ifdef PY3
+        if (!(signature_as_bytes = PyUnicode_AsUTF8String(signature))) {
+            Py_CLEAR(signature);
+            return -1;
+        }
+#else
+        signature_as_bytes = signature;
+        Py_INCREF(signature_as_bytes);
+#endif
+
+        c_str = PyBytes_AS_STRING(signature_as_bytes);
 
         if (!dbus_signature_validate_single(c_str, NULL)) {
-            Py_DECREF(signature);
+            Py_CLEAR(signature);
+            Py_CLEAR(signature_as_bytes);
             PyErr_SetString(PyExc_ValueError,
                             "There must be exactly one complete type in "
                             "an Array's signature parameter");
             return -1;
         }
+        Py_CLEAR(signature_as_bytes);
     }
 
     tuple = Py_BuildValue("(O)", obj);
     if (!tuple) {
-        Py_DECREF(signature);
+        Py_CLEAR(signature);
         return -1;
     }
     if ((PyList_Type.tp_init)((PyObject *)self, tuple, NULL) < 0) {
-        Py_DECREF(tuple);
-        Py_DECREF(signature);
+        Py_CLEAR(tuple);
+        Py_CLEAR(signature);
         return -1;
     }
-    Py_DECREF(tuple);
+    Py_CLEAR(tuple);
 
-    Py_XDECREF(self->signature);
+    Py_CLEAR(self->signature);
     self->signature = signature;
     return 0;
 }
 
 PyTypeObject DBusPyArray_Type = {
-    PyObject_HEAD_INIT(DEFERRED_ADDRESS(&PyType_Type))
-    0,
+    PyVarObject_HEAD_INIT(DEFERRED_ADDRESS(&PyType_Type), 0)
     "dbus.Array",
     sizeof(DBusPyArray),
     0,
@@ -286,8 +312,7 @@ static struct PyMemberDef Dict_tp_members[] = {
 static void
 Dict_tp_dealloc (DBusPyDict *self)
 {
-    Py_XDECREF(self->signature);
-    self->signature = NULL;
+    Py_CLEAR(self->signature);
     (PyDict_Type.tp_dealloc)((PyObject *)self);
 }
 
@@ -302,22 +327,22 @@ Dict_tp_repr(DBusPyDict *self)
     if (!parent_repr) goto finally;
     if (!sig_repr) goto finally;
     if (variant_level > 0) {
-        my_repr = PyString_FromFormat("%s(%s, signature=%s, "
-                                      "variant_level=%ld)",
-                                      self->super.ob_type->tp_name,
-                                      PyString_AS_STRING(parent_repr),
-                                      PyString_AS_STRING(sig_repr),
-                                      variant_level);
+        my_repr = PyUnicode_FromFormat("%s(%V, signature=%V, "
+                                       "variant_level=%ld)",
+                                       Py_TYPE(&self->super)->tp_name,
+                                       REPRV(parent_repr),
+                                       REPRV(sig_repr),
+                                       variant_level);
     }
     else {
-        my_repr = PyString_FromFormat("%s(%s, signature=%s)",
-                                      self->super.ob_type->tp_name,
-                                      PyString_AS_STRING(parent_repr),
-                                      PyString_AS_STRING(sig_repr));
+        my_repr = PyUnicode_FromFormat("%s(%V, signature=%V)",
+                                       Py_TYPE(&self->super)->tp_name,
+                                       REPRV(parent_repr),
+                                       REPRV(sig_repr));
     }
 finally:
-    Py_XDECREF(parent_repr);
-    Py_XDECREF(sig_repr);
+    Py_CLEAR(parent_repr);
+    Py_CLEAR(sig_repr);
     return my_repr;
 }
 
@@ -337,11 +362,13 @@ Dict_tp_new(PyTypeObject *cls, PyObject *args, PyObject *kwargs)
         variant_level = PyDict_GetItem(kwargs, dbus_py_variant_level_const);
     }
     if (variant_level) {
-        self->variant_level = PyInt_AsLong(variant_level);
-        if (PyErr_Occurred()) {
-            Py_DECREF((PyObject *)self);
+        long new_variant_level = PyLong_AsLong(variant_level);
+
+        if (new_variant_level == -1 && PyErr_Occurred()) {
+            Py_CLEAR(self);
             return NULL;
         }
+        self->variant_level = new_variant_level;
     }
     return (PyObject *)self;
 }
@@ -375,8 +402,25 @@ Dict_tp_init(DBusPyDict *self, PyObject *args, PyObject *kwargs)
     }
 
     if (signature != Py_None) {
-        const char *c_str = PyString_AS_STRING(signature);
+        const char *c_str;
+        PyObject *signature_as_bytes;
 
+        if (!NATIVESTR_CHECK(signature)) {
+            PyErr_SetString(PyExc_TypeError, "str expected");
+            Py_CLEAR(signature);
+            return -1;
+        }
+#ifdef PY3
+        if (!(signature_as_bytes = PyUnicode_AsUTF8String(signature))) {
+            Py_CLEAR(signature);
+            return -1;
+        }
+#else
+        signature_as_bytes = signature;
+        Py_INCREF(signature_as_bytes);
+#endif
+
+        c_str = PyBytes_AS_STRING(signature_as_bytes);
         switch (c_str[0]) {
             case DBUS_TYPE_BYTE:
             case DBUS_TYPE_BOOLEAN:
@@ -390,12 +434,16 @@ Dict_tp_init(DBusPyDict *self, PyObject *args, PyObject *kwargs)
 #ifdef WITH_DBUS_FLOAT32
             case DBUS_TYPE_FLOAT:
 #endif
+#ifdef DBUS_TYPE_UNIX_FD
+            case DBUS_TYPE_UNIX_FD:
+#endif
             case DBUS_TYPE_STRING:
             case DBUS_TYPE_OBJECT_PATH:
             case DBUS_TYPE_SIGNATURE:
                 break;
             default:
-                Py_DECREF(signature);
+                Py_CLEAR(signature);
+                Py_CLEAR(signature_as_bytes);
                 PyErr_SetString(PyExc_ValueError,
                                 "The key type in a Dictionary's signature "
                                 "must be a primitive type");
@@ -403,35 +451,36 @@ Dict_tp_init(DBusPyDict *self, PyObject *args, PyObject *kwargs)
         }
 
         if (!dbus_signature_validate_single(c_str + 1, NULL)) {
-            Py_DECREF(signature);
+            Py_CLEAR(signature);
+            Py_CLEAR(signature_as_bytes);
             PyErr_SetString(PyExc_ValueError,
                             "There must be exactly two complete types in "
                             "a Dictionary's signature parameter");
             return -1;
         }
+        Py_CLEAR(signature_as_bytes);
     }
 
     tuple = Py_BuildValue("(O)", obj);
     if (!tuple) {
-        Py_DECREF(signature);
+        Py_CLEAR(signature);
         return -1;
     }
 
     if ((PyDict_Type.tp_init((PyObject *)self, tuple, NULL)) < 0) {
-        Py_DECREF(tuple);
-        Py_DECREF(signature);
+        Py_CLEAR(tuple);
+        Py_CLEAR(signature);
         return -1;
     }
-    Py_DECREF(tuple);
+    Py_CLEAR(tuple);
 
-    Py_XDECREF(self->signature);
+    Py_CLEAR(self->signature);
     self->signature = signature;
     return 0;
 }
 
 PyTypeObject DBusPyDict_Type = {
-    PyObject_HEAD_INIT(DEFERRED_ADDRESS(&PyType_Type))
-    0,
+    PyVarObject_HEAD_INIT(DEFERRED_ADDRESS(&PyType_Type), 0)
     "dbus.Dictionary",
     sizeof(DBusPyDict),
     0,
@@ -516,29 +565,33 @@ Struct_tp_repr(PyObject *self)
     key = PyLong_FromVoidPtr(self);
     if (!key) goto finally;
     sig = PyDict_GetItem(struct_signatures, key);
-    Py_DECREF(key);
+    Py_CLEAR(key);
     if (!sig) sig = Py_None;
     sig_repr = PyObject_Repr(sig);
     if (!sig_repr) goto finally;
+
     variant_level = dbus_py_variant_level_get(self);
+    if (variant_level < 0)
+        goto finally;
+
     if (variant_level > 0) {
-        my_repr = PyString_FromFormat("%s(%s, signature=%s, "
-                                      "variant_level=%ld)",
-                                      self->ob_type->tp_name,
-                                      PyString_AS_STRING(parent_repr),
-                                      PyString_AS_STRING(sig_repr),
-                                      variant_level);
+        my_repr = PyUnicode_FromFormat("%s(%V, signature=%V, "
+                                       "variant_level=%ld)",
+                                       Py_TYPE(self)->tp_name,
+                                       REPRV(parent_repr),
+                                       REPRV(sig_repr),
+                                       variant_level);
     }
     else {
-        my_repr = PyString_FromFormat("%s(%s, signature=%s)",
-                                      self->ob_type->tp_name,
-                                      PyString_AS_STRING(parent_repr),
-                                      PyString_AS_STRING(sig_repr));
+        my_repr = PyUnicode_FromFormat("%s(%V, signature=%V)",
+                                       Py_TYPE(self)->tp_name,
+                                       REPRV(parent_repr),
+                                       REPRV(sig_repr));
     }
 
 finally:
-    Py_XDECREF(parent_repr);
-    Py_XDECREF(sig_repr);
+    Py_CLEAR(parent_repr);
+    Py_CLEAR(sig_repr);
     return my_repr;
 }
 
@@ -571,12 +624,12 @@ Struct_tp_new (PyTypeObject *cls, PyObject *args, PyObject *kwargs)
         return NULL;
     if (PyTuple_Size(self) < 1) {
         PyErr_SetString(PyExc_ValueError, "D-Bus structs may not be empty");
-        Py_DECREF(self);
+        Py_CLEAR(self);
         return NULL;
     }
 
     if (!dbus_py_variant_level_set(self, variantness)) {
-        Py_DECREF(self);
+        Py_CLEAR(self);
         return NULL;
     }
 
@@ -591,26 +644,26 @@ Struct_tp_new (PyTypeObject *cls, PyObject *args, PyObject *kwargs)
         signature = PyObject_CallFunction((PyObject *)&DBusPySignature_Type,
                                           "(O)", signature);
         if (!signature) {
-            Py_DECREF(self);
+            Py_CLEAR(self);
             return NULL;
         }
     }
 
     key = PyLong_FromVoidPtr(self);
     if (!key) {
-        Py_DECREF(self);
-        Py_DECREF(signature);
+        Py_CLEAR(self);
+        Py_CLEAR(signature);
         return NULL;
     }
     if (PyDict_SetItem(struct_signatures, key, signature) < 0) {
-        Py_DECREF(key);
-        Py_DECREF(self);
-        Py_DECREF(signature);
+        Py_CLEAR(key);
+        Py_CLEAR(self);
+        Py_CLEAR(signature);
         return NULL;
     }
 
-    Py_DECREF(key);
-    Py_DECREF(signature);
+    Py_CLEAR(key);
+    Py_CLEAR(signature);
     return self;
 }
 
@@ -630,7 +683,7 @@ Struct_tp_dealloc(PyObject *self)
                 PyErr_WriteUnraisable(self);
             }
         }
-        Py_DECREF(key);
+        Py_CLEAR(key);
     }
     else {
         /* not enough memory to free all the memory... leak the signature,
@@ -647,7 +700,11 @@ Struct_tp_getattro(PyObject *obj, PyObject *name)
 {
     PyObject *key, *value;
 
-    if (PyString_Check(name)) {
+#ifdef PY3
+    if (PyUnicode_CompareWithASCIIString(name, "signature"))
+        return dbus_py_variant_level_getattro(obj, name);
+#else
+    if (PyBytes_Check(name)) {
         Py_INCREF(name);
     }
     else if (PyUnicode_Check(name)) {
@@ -661,13 +718,13 @@ Struct_tp_getattro(PyObject *obj, PyObject *name)
         return NULL;
     }
 
-    if (strcmp(PyString_AS_STRING(name), "signature")) {
+    if (strcmp(PyBytes_AS_STRING(name), "signature")) {
         value = dbus_py_variant_level_getattro(obj, name);
-        Py_DECREF(name);
+        Py_CLEAR(name);
         return value;
     }
-
-    Py_DECREF(name);
+    Py_CLEAR(name);
+#endif  /* PY3 */
 
     key = PyLong_FromVoidPtr(obj);
 
@@ -676,7 +733,7 @@ Struct_tp_getattro(PyObject *obj, PyObject *name)
     }
 
     value = PyDict_GetItem(struct_signatures, key);
-    Py_DECREF(key);
+    Py_CLEAR(key);
 
     if (!value)
         value = Py_None;
@@ -685,8 +742,7 @@ Struct_tp_getattro(PyObject *obj, PyObject *name)
 }
 
 PyTypeObject DBusPyStruct_Type = {
-    PyObject_HEAD_INIT(DEFERRED_ADDRESS(&PyType_Type))
-    0,
+    PyVarObject_HEAD_INIT(DEFERRED_ADDRESS(&PyType_Type), 0)
     "dbus.Struct",
     0,
     0,
@@ -750,6 +806,7 @@ dbus_py_init_container_types(void)
 dbus_bool_t
 dbus_py_insert_container_types(PyObject *this_module)
 {
+    /* PyModule_AddObject steals a ref */
     Py_INCREF(&DBusPyArray_Type);
     if (PyModule_AddObject(this_module, "Array",
                            (PyObject *)&DBusPyArray_Type) < 0) return 0;

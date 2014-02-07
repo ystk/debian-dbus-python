@@ -1,7 +1,7 @@
-/* General Python glue code, used in _dbus_bindings but not actually anything
- * to do with D-Bus.
+/* Old D-Bus compatibility: implementation internals
  *
- * Copyright (C) 2006 Collabora Ltd. <http://www.collabora.co.uk/>
+ * Copyright © 2006-2011 Collabora Ltd.
+ * Copyright © 2011 Nokia Corporation
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -24,38 +24,29 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+#ifndef DBUS_BINDINGS_COMPAT_INTERNAL_H
+#define DBUS_BINDINGS_COMPAT_INTERNAL_H
+
+#include "config.h"
 #include "dbus_bindings-internal.h"
 
-/* The empty tuple, held globally since dbus-python turns out to use it quite
- * a lot
- */
-PyObject *dbus_py_empty_tuple = NULL;
+#ifndef HAVE_DBUSBASICVALUE
+typedef union {
+    dbus_bool_t bool_val;
+    double dbl;
+    dbus_uint16_t u16;
+    dbus_int16_t i16;
+    dbus_uint32_t u32;
+    dbus_int32_t i32;
+#if defined(DBUS_HAVE_INT64) && defined(HAVE_LONG_LONG)
+    dbus_uint64_t u64;
+    dbus_int64_t i64;
+#endif
+    const char *str;
+    unsigned char byt;
+    float f;
+    int fd;
+} DBusBasicValue;
+#endif
 
-int
-dbus_py_immutable_setattro(PyObject *obj UNUSED,
-                           PyObject *name UNUSED,
-                           PyObject *value UNUSED)
-{
-    PyErr_SetString(PyExc_AttributeError, "Object is immutable");
-    return -1;
-}
-
-/* Take the global interpreter lock and decrement the reference count.
- * Suitable for calling from a C callback. */
-void
-dbus_py_take_gil_and_xdecref(PyObject *obj)
-{
-    PyGILState_STATE gil = PyGILState_Ensure();
-    Py_CLEAR(obj);
-    PyGILState_Release(gil);
-}
-
-dbus_bool_t
-dbus_py_init_generic(void)
-{
-    dbus_py_empty_tuple = PyTuple_New(0);
-    if (!dbus_py_empty_tuple) return 0;
-    return 1;
-}
-
-/* vim:set ft=c cino< sw=4 sts=4 et: */
+#endif

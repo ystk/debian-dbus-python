@@ -23,7 +23,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-import sys
 import os
 import logging
 from time import sleep
@@ -38,16 +37,16 @@ if not dbus.__file__.startswith(pydir):
 
 import dbus.service
 import dbus.glib
-import gobject
 import random
 
-from dbus.gobject_service import ExportedGObject
+from dbus.gi_service import ExportedGObject
+from gi.repository import GObject
+from dbus._compat import is_py2, is_py3
 
 
-logging.basicConfig(filename=builddir + '/test/test-service.log', filemode='w')
+logging.basicConfig(filename=builddir + '/test/test-service.log', filemode='a')
 logging.getLogger().setLevel(1)
 logger = logging.getLogger('test-service')
-
 
 NAME = "org.freedesktop.DBus.TestSuitePythonService"
 IFACE = "org.freedesktop.DBus.TestSuiteInterface"
@@ -137,10 +136,14 @@ class TestObject(dbus.service.Object, TestInterface):
 
     @dbus.service.method(IFACE, in_signature='s', out_signature='s')
     def AcceptUnicodeString(self, foo):
-        assert isinstance(foo, unicode), (foo, foo.__class__.__mro__)
+        unicode_type = (str if is_py3 else unicode)
+        assert isinstance(foo, unicode_type), (foo, foo.__class__.__mro__)
         return foo
 
-    @dbus.service.method(IFACE, in_signature='s', out_signature='s', utf8_strings=True)
+    kwargs = {}
+    if is_py2:
+        kwargs['utf8_strings'] = True
+    @dbus.service.method(IFACE, in_signature='s', out_signature='s', **kwargs)
     def AcceptUTF8String(self, foo):
         assert isinstance(foo, str), (foo, foo.__class__.__mro__)
         return foo
@@ -158,9 +161,10 @@ class TestObject(dbus.service.Object, TestInterface):
         assert isinstance(foo, list), (foo, foo.__class__.__mro__)
         return foo
 
-    @dbus.service.method(IFACE, in_signature='ay', out_signature='ay', byte_arrays=True)
+    @dbus.service.method(IFACE, in_signature='ay', out_signature='ay', 
+                         byte_arrays=True)
     def AcceptByteArray(self, foo):
-        assert isinstance(foo, str), (foo, foo.__class__.__mro__)
+        assert isinstance(foo, bytes), (foo, foo.__class__.__mro__)
         return foo
 
     @dbus.service.method(IFACE)
@@ -254,11 +258,13 @@ class TestObject(dbus.service.Object, TestInterface):
         assert objs_org == ['freedesktop'], objs_org
         return True
 
-    @dbus.service.method(IFACE, in_signature='bbv', out_signature='v', async_callbacks=('return_cb', 'error_cb'))
+    @dbus.service.method(IFACE, in_signature='bbv', out_signature='v', 
+                         async_callbacks=('return_cb', 'error_cb'))
     def AsynchronousMethod(self, async, fail, variant, return_cb, error_cb):
         try:
             if async:
-                gobject.timeout_add(500, self.AsynchronousMethod, False, fail, variant, return_cb, error_cb)
+                GObject.timeout_add(500, self.AsynchronousMethod, False, fail,
+                                    variant, return_cb, error_cb)
                 return
             else:
                 if fail:
@@ -267,10 +273,11 @@ class TestObject(dbus.service.Object, TestInterface):
                     return_cb(variant)
 
                 return False # do not run again
-        except Exception, e:
+        except Exception as e:
             error_cb(e)
 
-    @dbus.service.method(IFACE, in_signature='', out_signature='s', sender_keyword='sender')
+    @dbus.service.method(IFACE, in_signature='', out_signature='s', 
+                         sender_keyword='sender')
     def WhoAmI(self, sender):
         return sender
 
@@ -303,7 +310,7 @@ class TestObject(dbus.service.Object, TestInterface):
         def return_from_async_wait():
             return_cb()
             return False
-        gobject.timeout_add(500, return_from_async_wait)
+        GObject.timeout_add(500, return_from_async_wait)
 
     @dbus.service.method(IFACE, in_signature='', out_signature='')
     def RaiseValueError(self):
@@ -335,10 +342,31 @@ class TestObject(dbus.service.Object, TestInterface):
 
         raise_cb(Fdo12403Error())
 
-session_bus = dbus.SessionBus()
-global_name = dbus.service.BusName(NAME, bus=session_bus)
-object = TestObject(global_name)
-g_object = TestGObject(global_name)
-fallback_object = Fallback(session_bus)
-loop = gobject.MainLoop()
-loop.run()
+
+def main():
+    global session_bus
+    logger.info('getting session bus')
+    session_bus = dbus.SessionBus()
+    logger.info('getting bus name %s', NAME)
+    global_name = dbus.service.BusName(NAME, bus=session_bus)
+    logger.info('making TestObject')
+    object = TestObject(global_name)
+    logger.info('making TestGObject')
+    g_object = TestGObject(global_name)
+    logger.info('making Fallback')
+    fallback_object = Fallback(session_bus)
+    logger.info('creating mainloop')
+    loop = GObject.MainLoop()
+    logger.info('running')
+    loop.run()
+    logger.info('done')
+
+
+if __name__ == '__main__':
+    session_bus = None
+    try:
+        logger.info('entering main')
+        main()
+    except:
+        logger.exception('test-service main failure')
+        raise

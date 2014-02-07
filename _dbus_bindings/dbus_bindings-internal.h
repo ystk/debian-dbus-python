@@ -30,13 +30,6 @@
 
 #include <Python.h>
 
-/* Python < 2.5 compat */
-#if PY_VERSION_HEX < 0x02050000 && !defined(PY_SSIZE_T_MIN)
-typedef int Py_ssize_t;
-#define PY_SSIZE_T_MAX INT_MAX
-#define PY_SSIZE_T_MIN INT_MIN
-#endif
-
 #define INSIDE_DBUS_PYTHON_BINDINGS
 #include "dbus-python.h"
 
@@ -55,10 +48,57 @@ static inline int type##_Check (PyObject *o) \
 } \
 static inline int type##_CheckExact (PyObject *o) \
 { \
-    return ((o)->ob_type == &type##_Type); \
+    return (Py_TYPE(o) == &type##_Type); \
 }
 
+/* This is a clever little trick to make writing the various object reprs
+ * easier.  It relies on Python's %V format option which consumes two
+ * arguments.  The first is a unicode object which may be NULL, and the second
+ * is a char* which will be used if the first parameter is NULL.
+ *
+ * The issue is that we don't know whether the `parent_repr` at the call site
+ * is a unicode or a bytes (a.k.a. 8-bit string).  Under Python 3, it will
+ * always be a unicode.  Under Python 2 it will *probably* be a bytes/str, but
+ * could potentially be a unicode.  So, we check the type, and if it's a
+ * unicode, we pass that as the first argument, leaving NULL as the second
+ * argument (since it will never be checked).  However, if the object is not a
+ * unicode, it better be a bytes.  In that case, we'll pass NULL as the first
+ * argument so that the second one gets used, and we'll dig the char* out of
+ * the bytes object for that purpose.
+ *
+ * You might think that this would crash if obj is neither a bytes/str or
+ * unicode, and you'd be right *except* that Python doesn't allow any other
+ * types to be returned in the reprs.  Also, since obj will always be the repr
+ * of a built-in type, it will never be anything other than a bytes or a
+ * unicode in any version of Python.  So in practice, this is safe.
+ */
+#define REPRV(obj) \
+    (PyUnicode_Check(obj) ? (obj) : NULL), \
+    (PyUnicode_Check(obj) ? NULL : PyBytes_AS_STRING(obj))
+
+#ifdef PY3
+#define NATIVEINT_TYPE (PyLong_Type)
+#define NATIVEINT_FROMLONG(x) (PyLong_FromLong(x))
+#define NATIVEINT_ASLONG(x) (PyLong_AsLong(x))
+#define INTORLONG_CHECK(obj) (PyLong_Check(obj))
+#define NATIVESTR_TYPE (PyUnicode_Type)
+#define NATIVESTR_CHECK(obj) (PyUnicode_Check(obj))
+#define NATIVESTR_FROMSTR(obj) (PyUnicode_FromString(obj))
+#else
+#define NATIVEINT_TYPE (PyInt_Type)
+#define NATIVEINT_FROMLONG(x) (PyInt_FromLong(x))
+#define NATIVEINT_ASLONG(x) (PyInt_AsLong(x))
+#define INTORLONG_CHECK(obj) (PyLong_Check(obj) || PyInt_Check(obj))
+#define NATIVESTR_TYPE (PyBytes_Type)
+#define NATIVESTR_CHECK(obj) (PyBytes_Check(obj))
+#define NATIVESTR_FROMSTR(obj) (PyBytes_FromString(obj))
+#endif
+
+#ifdef PY3
+PyMODINIT_FUNC PyInit__dbus_bindings(void);
+#else
 PyMODINIT_FUNC init_dbus_bindings(void);
+#endif
 
 /* conn.c */
 extern PyTypeObject DBusPyConnection_Type;
@@ -96,9 +136,12 @@ DEFINE_CHECK(DBusPyStruct)
 extern PyTypeObject DBusPyByte_Type, DBusPyByteArray_Type;
 DEFINE_CHECK(DBusPyByteArray)
 DEFINE_CHECK(DBusPyByte)
-extern PyTypeObject DBusPyUTF8String_Type, DBusPyString_Type;
-DEFINE_CHECK(DBusPyUTF8String)
+extern PyTypeObject DBusPyString_Type;
 DEFINE_CHECK(DBusPyString)
+#ifndef PY3
+extern PyTypeObject DBusPyUTF8String_Type;
+DEFINE_CHECK(DBusPyUTF8String)
+#endif
 extern PyTypeObject DBusPyDouble_Type;
 DEFINE_CHECK(DBusPyDouble)
 extern PyTypeObject DBusPyInt16_Type, DBusPyUInt16_Type;
@@ -107,12 +150,15 @@ DEFINE_CHECK(DBusPyUInt16)
 extern PyTypeObject DBusPyInt32_Type, DBusPyUInt32_Type;
 DEFINE_CHECK(DBusPyInt32)
 DEFINE_CHECK(DBusPyUInt32)
+extern PyTypeObject DBusPyUnixFd_Type;
+DEFINE_CHECK(DBusPyUnixFd)
 extern PyTypeObject DBusPyInt64_Type, DBusPyUInt64_Type;
 DEFINE_CHECK(DBusPyInt64)
 DEFINE_CHECK(DBusPyUInt64)
 extern dbus_bool_t dbus_py_init_abstract(void);
 extern dbus_bool_t dbus_py_init_signature(void);
 extern dbus_bool_t dbus_py_init_int_types(void);
+extern dbus_bool_t dbus_py_init_unixfd_type(void);
 extern dbus_bool_t dbus_py_init_string_types(void);
 extern dbus_bool_t dbus_py_init_float_types(void);
 extern dbus_bool_t dbus_py_init_container_types(void);
@@ -120,18 +166,17 @@ extern dbus_bool_t dbus_py_init_byte_types(void);
 extern dbus_bool_t dbus_py_insert_abstract_types(PyObject *this_module);
 extern dbus_bool_t dbus_py_insert_signature(PyObject *this_module);
 extern dbus_bool_t dbus_py_insert_int_types(PyObject *this_module);
+extern dbus_bool_t dbus_py_insert_unixfd_type(PyObject *this_module);
 extern dbus_bool_t dbus_py_insert_string_types(PyObject *this_module);
 extern dbus_bool_t dbus_py_insert_float_types(PyObject *this_module);
 extern dbus_bool_t dbus_py_insert_container_types(PyObject *this_module);
 extern dbus_bool_t dbus_py_insert_byte_types(PyObject *this_module);
 
+int dbus_py_unix_fd_get_fd(PyObject *self);
+
 /* generic */
 extern void dbus_py_take_gil_and_xdecref(PyObject *);
 extern int dbus_py_immutable_setattro(PyObject *, PyObject *, PyObject *);
-extern PyObject *dbus_py_tp_richcompare_by_pointer(PyObject *,
-                                                   PyObject *,
-                                                   int);
-extern long dbus_py_tp_hash_by_pointer(PyObject *self);
 extern PyObject *dbus_py_empty_tuple;
 extern dbus_bool_t dbus_py_init_generic(void);
 
@@ -206,11 +251,13 @@ void _dbus_py_dbg_exc(void);
 void _dbus_py_whereami(void);
 void _dbus_py_dbg_dump_message(DBusMessage *);
 
-#   define TRACE(self) do { fprintf(stderr, "TRACE: <%s at %p> in %s, " \
-                                    "%d refs\n", \
-                                    self->ob_type->tp_name, \
-                                    self, __func__, \
-                                    self->ob_refcnt); } while (0)
+#   define TRACE(self) do { \
+    fprintf(stderr, "TRACE: <%s at %p> in %s, "                 \
+            "%d refs\n",                                        \
+            self ? Py_TYPE(self)->tp_name : NULL,               \
+            self, __func__,                                     \
+            self ? (int)Py_REFCNT(self) : 0);                   \
+    } while (0)
 #   define DBG(format, ...) fprintf(stderr, "DEBUG: " format "\n",\
                                     __VA_ARGS__)
 #   define DBG_EXC(format, ...) do {DBG(format, __VA_ARGS__); \

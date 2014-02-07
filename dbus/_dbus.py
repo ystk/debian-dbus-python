@@ -30,26 +30,18 @@ from __future__ import generators
 __all__ = ('Bus', 'SystemBus', 'SessionBus', 'StarterBus')
 __docformat__ = 'reStructuredText'
 
-import os
-import sys
-import weakref
-from traceback import print_exc
-
 from dbus.exceptions import DBusException
-from _dbus_bindings import BUS_DAEMON_NAME, BUS_DAEMON_PATH,\
-                           BUS_DAEMON_IFACE, UTF8String,\
-                           validate_member_name, validate_interface_name,\
-                           validate_bus_name, validate_object_path,\
-                           BUS_SESSION, BUS_SYSTEM, BUS_STARTER,\
-                           DBUS_START_REPLY_SUCCESS, \
-                           DBUS_START_REPLY_ALREADY_RUNNING
+from _dbus_bindings import (
+    BUS_DAEMON_IFACE, BUS_DAEMON_NAME, BUS_DAEMON_PATH, BUS_SESSION,
+    BUS_STARTER, BUS_SYSTEM, DBUS_START_REPLY_ALREADY_RUNNING,
+    DBUS_START_REPLY_SUCCESS, validate_bus_name,
+    validate_interface_name, validate_member_name, validate_object_path)
 from dbus.bus import BusConnection
 from dbus.lowlevel import SignalMessage
+from dbus._compat import is_py2
 
-try:
-    import thread
-except ImportError:
-    import dummy_thread as thread
+if is_py2:
+    from _dbus_bindings import UTF8String
 
 
 class Bus(BusConnection):
@@ -236,21 +228,3 @@ class StarterBus(Bus):
         """
         return Bus.__new__(cls, Bus.TYPE_STARTER, private=private,
                            mainloop=mainloop)
-
-
-if 'DBUS_PYTHON_NO_DEPRECATED' not in os.environ:
-
-    class _DBusBindingsEmulation:
-        """A partial emulation of the dbus_bindings module."""
-        def __str__(self):
-            return '_DBusBindingsEmulation()'
-        def __repr__(self):
-            return '_DBusBindingsEmulation()'
-        def __getattr__(self, attr):
-            global dbus_bindings
-            import dbus.dbus_bindings as m
-            dbus_bindings = m
-            return getattr(m, attr)
-
-    dbus_bindings = _DBusBindingsEmulation()
-    """Deprecated, don't use."""

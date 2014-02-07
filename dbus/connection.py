@@ -24,22 +24,23 @@ __all__ = ('Connection', 'SignalMatch')
 __docformat__ = 'reStructuredText'
 
 import logging
-try:
-    import thread
-except ImportError:
-    import dummy_thread as thread
+import threading
 import weakref
 
-from _dbus_bindings import Connection as _Connection, \
-                           LOCAL_PATH, LOCAL_IFACE, \
-                           validate_interface_name, validate_member_name,\
-                           validate_bus_name, validate_object_path,\
-                           validate_error_name, \
-                           UTF8String
+from _dbus_bindings import (
+    Connection as _Connection, LOCAL_IFACE, LOCAL_PATH, validate_bus_name,
+    validate_interface_name, validate_member_name, validate_object_path)
 from dbus.exceptions import DBusException
-from dbus.lowlevel import ErrorMessage, MethodCallMessage, SignalMessage, \
-                          MethodReturnMessage, HANDLER_RESULT_NOT_YET_HANDLED
+from dbus.lowlevel import (
+    ErrorMessage, HANDLER_RESULT_NOT_YET_HANDLED, MethodCallMessage,
+    MethodReturnMessage, SignalMessage)
 from dbus.proxies import ProxyObject
+from dbus._compat import is_py2, is_py3
+
+if is_py3:
+    from _dbus_bindings import String
+else:
+    from _dbus_bindings import UTF8String
 
 
 _logger = logging.getLogger('dbus.connection')
@@ -50,15 +51,19 @@ def _noop(*args, **kwargs):
 
 
 class SignalMatch(object):
-    __slots__ = ('_sender_name_owner', '_member', '_interface', '_sender',
-                 '_path', '_handler', '_args_match', '_rule',
-                 '_utf8_strings', '_byte_arrays', '_conn_weakref',
-                 '_destination_keyword', '_interface_keyword',
-                 '_message_keyword', '_member_keyword',
-                 '_sender_keyword', '_path_keyword', '_int_args_match')
+    _slots = ['_sender_name_owner', '_member', '_interface', '_sender',
+              '_path', '_handler', '_args_match', '_rule',
+              '_byte_arrays', '_conn_weakref',
+              '_destination_keyword', '_interface_keyword',
+              '_message_keyword', '_member_keyword',
+              '_sender_keyword', '_path_keyword', '_int_args_match']
+    if is_py2:
+        _slots.append('_utf8_strings')
+
+    __slots__ = tuple(_slots)
 
     def __init__(self, conn, sender, object_path, dbus_interface,
-                 member, handler, utf8_strings=False, byte_arrays=False,
+                 member, handler, byte_arrays=False,
                  sender_keyword=None, path_keyword=None,
                  interface_keyword=None, member_keyword=None,
                  message_keyword=None, destination_keyword=None,
@@ -84,7 +89,11 @@ class SignalMatch(object):
         # this later
         self._sender_name_owner = sender
 
-        self._utf8_strings = utf8_strings
+        if is_py2:
+            self._utf8_strings = kwargs.pop('utf8_strings', False)
+        elif 'utf8_strings' in kwargs:
+            raise TypeError("unexpected keyword argument 'utf8_strings'")
+
         self._byte_arrays = byte_arrays
         self._sender_keyword = sender_keyword
         self._path_keyword = path_keyword
@@ -138,7 +147,7 @@ class SignalMatch(object):
             if self._member is not None:
                 rule.append("member='%s'" % self._member)
             if self._int_args_match is not None:
-                for index, value in self._int_args_match.iteritems():
+                for index, value in self._int_args_match.items():
                     rule.append("arg%d='%s'" % (index, value))
 
             self._rule = ','.join(rule)
@@ -176,10 +185,14 @@ class SignalMatch(object):
             return False
         if self._int_args_match is not None:
             # extracting args with utf8_strings and byte_arrays is less work
-            args = message.get_args_list(utf8_strings=True, byte_arrays=True)
-            for index, value in self._int_args_match.iteritems():
+            kwargs = dict(byte_arrays=True)
+            arg_type = (String if is_py3 else UTF8String)
+            if is_py2:
+                kwargs['utf8_strings'] = True
+            args = message.get_args_list(**kwargs)
+            for index, value in self._int_args_match.items():
                 if (index >= len(args)
-                    or not isinstance(args[index], UTF8String)
+                    or not isinstance(args[index], arg_type)
                     or args[index] != value):
                     return False
 
@@ -195,9 +208,12 @@ class SignalMatch(object):
             # minor optimization: if we already extracted the args with the
             # right calling convention to do the args match, don't bother
             # doing so again
-            if args is None or not self._utf8_strings or not self._byte_arrays:
-                args = message.get_args_list(utf8_strings=self._utf8_strings,
-                                             byte_arrays=self._byte_arrays)
+            utf8_strings = (is_py2 and self._utf8_strings)
+            if args is None or not utf8_strings or not self._byte_arrays:
+                kwargs = dict(byte_arrays=self._byte_arrays)
+                if is_py2:
+                    kwargs['utf8_strings'] = self._utf8_strings
+                args = message.get_args_list(**kwargs)
             kwargs = {}
             if self._sender_keyword is not None:
                 kwargs[self._sender_keyword] = message.get_sender()
@@ -252,7 +268,7 @@ class Connection(_Connection):
             """Map from object path to dict mapping dbus_interface to dict
             mapping member to list of SignalMatch objects."""
 
-            self._signals_lock = thread.allocate_lock()
+            self._signals_lock = threading.Lock()
             """Lock used to protect signal data structures"""
 
             self.add_message_filter(self.__class__._signal_func)
@@ -305,7 +321,7 @@ class Connection(_Connection):
             bus_name = named_service
         if kwargs:
             raise TypeError('get_object does not take these keyword '
-                            'arguments: %s' % ', '.join(kwargs.iterkeys()))
+                            'arguments: %s' % ', '.join(kwargs.keys()))
 
         return self.ProxyObjectClass(self, bus_name, object_path,
                                      introspect=introspect)
@@ -425,8 +441,7 @@ class Connection(_Connection):
             member_keys = (None,)
 
         for path in path_keys:
-            by_interface = self._signal_recipients_by_object_path.get(path,
-                                                                      None)
+            by_interface = self._signal_recipients_by_object_path.get(path)
             if by_interface is None:
                 continue
             for dbus_interface in interface_keys:
@@ -525,7 +540,7 @@ class Connection(_Connection):
             for cb in self.__call_on_disconnection:
                 try:
                     cb(self)
-                except Exception, e:
+                except Exception:
                     # basicConfig is a no-op if logging is already configured
                     logging.basicConfig()
                     _logger.error('Exception in handler for Disconnected '
@@ -535,8 +550,8 @@ class Connection(_Connection):
 
     def call_async(self, bus_name, object_path, dbus_interface, method,
                    signature, args, reply_handler, error_handler,
-                   timeout=-1.0, utf8_strings=False, byte_arrays=False,
-                   require_main_loop=True):
+                   timeout=-1.0, byte_arrays=False,
+                   require_main_loop=True, **kwargs):
         """Call the given method, asynchronously.
 
         If the reply_handler is None, successful replies will be ignored.
@@ -554,8 +569,11 @@ class Connection(_Connection):
                                 'interface %s' % LOCAL_IFACE)
         # no need to validate other args - MethodCallMessage ctor will do
 
-        get_args_opts = {'utf8_strings': utf8_strings,
-                         'byte_arrays': byte_arrays}
+        get_args_opts = dict(byte_arrays=byte_arrays)
+        if is_py2:
+            get_args_opts['utf8_strings'] = kwargs.get('utf8_strings', False)
+        elif 'utf8_strings' in kwargs:
+            raise TypeError("unexpected keyword argument 'utf8_strings'")
 
         message = MethodCallMessage(destination=bus_name,
                                     path=object_path,
@@ -564,7 +582,7 @@ class Connection(_Connection):
         # Add the arguments to the function
         try:
             message.append(signature=signature, *args)
-        except Exception, e:
+        except Exception as e:
             logging.basicConfig()
             _logger.error('Unable to set arguments %r according to '
                           'signature %r: %s: %s',
@@ -595,8 +613,8 @@ class Connection(_Connection):
                                         require_main_loop=require_main_loop)
 
     def call_blocking(self, bus_name, object_path, dbus_interface, method,
-                      signature, args, timeout=-1.0, utf8_strings=False,
-                      byte_arrays=False):
+                      signature, args, timeout=-1.0,
+                      byte_arrays=False, **kwargs):
         """Call the given method, synchronously.
         :Since: 0.81.0
         """
@@ -608,8 +626,11 @@ class Connection(_Connection):
                                 'interface %s' % LOCAL_IFACE)
         # no need to validate other args - MethodCallMessage ctor will do
 
-        get_args_opts = {'utf8_strings': utf8_strings,
-                         'byte_arrays': byte_arrays}
+        get_args_opts = dict(byte_arrays=byte_arrays)
+        if is_py2:
+            get_args_opts['utf8_strings'] = kwargs.get('utf8_strings', False)
+        elif 'utf8_strings' in kwargs:
+            raise TypeError("unexpected keyword argument 'utf8_strings'")
 
         message = MethodCallMessage(destination=bus_name,
                                     path=object_path,
@@ -618,7 +639,7 @@ class Connection(_Connection):
         # Add the arguments to the function
         try:
             message.append(signature=signature, *args)
-        except Exception, e:
+        except Exception as e:
             logging.basicConfig()
             _logger.error('Unable to set arguments %r according to '
                           'signature %r: %s: %s',

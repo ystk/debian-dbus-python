@@ -62,6 +62,11 @@ fi
 
 dbus-monitor > "$DBUS_TOP_BUILDDIR"/test/monitor.log &
 
+echo "DBUS_TOP_SRCDIR=$DBUS_TOP_SRCDIR"
+echo "DBUS_TOP_BUILDDIR=$DBUS_TOP_BUILDDIR"
+echo "PYTHONPATH=$PYTHONPATH"
+echo "PYTHON=$PYTHON"
+
 echo "running test-standalone.py"
 $PYTHON "$DBUS_TOP_SRCDIR"/test/test-standalone.py || die "test-standalone.py failed"
 

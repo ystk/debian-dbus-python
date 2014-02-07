@@ -80,13 +80,13 @@ DBusPyConnection_HandleMessage(Connection *conn,
                                                  NULL);
     if (obj == Py_None) {
         DBG("%p: OK, handler %p returned None", conn, callable);
-        Py_DECREF(obj);
+        Py_CLEAR(obj);
         return DBUS_HANDLER_RESULT_HANDLED;
     }
     else if (obj == Py_NotImplemented) {
         DBG("%p: handler %p returned NotImplemented, continuing",
             conn, callable);
-        Py_DECREF(obj);
+        Py_CLEAR(obj);
         return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
     }
     else if (!obj) {
@@ -99,9 +99,9 @@ DBusPyConnection_HandleMessage(Connection *conn,
         return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
     }
     else {
-        long i = PyInt_AsLong(obj);
+        long i = PyLong_AsLong(obj);
         DBG("%p: handler %p returned %ld", conn, callable, i);
-        Py_DECREF(obj);
+        Py_CLEAR(obj);
         if (i == -1 && PyErr_Occurred()) {
             PyErr_SetString(PyExc_TypeError, "Return from D-Bus message "
                             "handler callback should be None, "
@@ -232,6 +232,7 @@ DBusPyConnection_NewConsumingDBusConnection(PyTypeObject *cls,
     self->has_mainloop = (mainloop != Py_None);
     self->conn = NULL;
     self->filters = PyList_New(0);
+    self->weaklist = NULL;
     if (!self->filters) goto err;
     self->object_paths = PyDict_New();
     if (!self->object_paths) goto err;
@@ -269,7 +270,7 @@ DBusPyConnection_NewConsumingDBusConnection(PyTypeObject *cls,
         goto err;
     }
 
-    Py_DECREF(mainloop);
+    Py_CLEAR(mainloop);
 
     DBG("%s() -> %p", __func__, self);
     TRACE(self);
@@ -277,9 +278,9 @@ DBusPyConnection_NewConsumingDBusConnection(PyTypeObject *cls,
 
 err:
     DBG("Failed to construct Connection from DBusConnection at %p", conn);
-    Py_XDECREF(mainloop);
-    Py_XDECREF(self);
-    Py_XDECREF(ref);
+    Py_CLEAR(mainloop);
+    Py_CLEAR(self);
+    Py_CLEAR(ref);
     if (conn) {
         Py_BEGIN_ALLOW_THREADS
         dbus_connection_close(conn);
@@ -298,7 +299,6 @@ static PyObject *
 Connection_tp_new(PyTypeObject *cls, PyObject *args, PyObject *kwargs)
 {
     DBusConnection *conn;
-    const char *address;
     PyObject *address_or_conn;
     DBusError error;
     PyObject *self, *mainloop = NULL;
@@ -317,7 +317,9 @@ Connection_tp_new(PyTypeObject *cls, PyObject *args, PyObject *kwargs)
 
         conn = dbus_connection_ref (wrapper->conn);
     }
-    else if ((address = PyString_AsString(address_or_conn)) != NULL) {
+    else if (PyBytes_Check(address_or_conn)) {
+        const char *address = PyBytes_AS_STRING(address_or_conn);
+
         dbus_error_init(&error);
 
         /* We always open a private connection (at the libdbus level). Sharing
@@ -331,7 +333,30 @@ Connection_tp_new(PyTypeObject *cls, PyObject *args, PyObject *kwargs)
             return NULL;
         }
     }
+    else if (PyUnicode_Check(address_or_conn)) {
+        PyObject *address_as_bytes = PyUnicode_AsUTF8String(address_or_conn);
+        const char *address;
+
+        if (!address_as_bytes)
+            return NULL;
+        address = PyBytes_AS_STRING(address_as_bytes);
+
+        dbus_error_init(&error);
+
+        /* We always open a private connection (at the libdbus level). Sharing
+         * is done in Python, to keep things simple. */
+        Py_BEGIN_ALLOW_THREADS
+        conn = dbus_connection_open_private(address, &error);
+        Py_END_ALLOW_THREADS
+
+        Py_CLEAR(address_as_bytes);
+        if (!conn) {
+            DBusPyException_ConsumeError(&error);
+            return NULL;
+        }
+    }
     else {
+        PyErr_SetString(PyExc_TypeError, "connection or str expected");
         return NULL;
     }
 
@@ -371,9 +396,9 @@ static void Connection_tp_dealloc(Connection *self)
 
     DBG("Connection at %p: deleting callbacks", self);
     self->filters = NULL;
-    Py_XDECREF(filters);
+    Py_CLEAR(filters);
     self->object_paths = NULL;
-    Py_XDECREF(object_paths);
+    Py_CLEAR(object_paths);
 
     if (conn) {
         /* Might trigger callbacks if we're unlucky... */
@@ -398,14 +423,13 @@ static void Connection_tp_dealloc(Connection *self)
 
     DBG("Connection at %p: freeing self", self);
     PyErr_Restore(et, ev, etb);
-    (self->ob_type->tp_free)((PyObject *)self);
+    (Py_TYPE(self)->tp_free)((PyObject *)self);
 }
 
 /* Connection type object =========================================== */
 
 PyTypeObject DBusPyConnection_Type = {
-    PyObject_HEAD_INIT(NULL)
-    0,                      /*ob_size*/
+    PyVarObject_HEAD_INIT(NULL, 0)
     "_dbus_bindings.Connection", /*tp_name*/
     sizeof(Connection),     /*tp_basicsize*/
     0,                      /*tp_itemsize*/
@@ -425,7 +449,11 @@ PyTypeObject DBusPyConnection_Type = {
     0,                      /*tp_getattro*/
     0,                      /*tp_setattro*/
     0,                      /*tp_as_buffer*/
+#ifdef PY3
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+#else
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_WEAKREFS | Py_TPFLAGS_BASETYPE,
+#endif
     Connection_tp_doc,      /*tp_doc*/
     0,                      /*tp_traverse*/
     0,                      /*tp_clear*/
@@ -463,6 +491,8 @@ dbus_py_init_conn_types(void)
 dbus_bool_t
 dbus_py_insert_conn_types(PyObject *this_module)
 {
+    /* PyModule_AddObject steals a ref */
+    Py_INCREF (&DBusPyConnection_Type);
     if (PyModule_AddObject(this_module, "Connection",
                            (PyObject *)&DBusPyConnection_Type) < 0) return FALSE;
     return TRUE;
