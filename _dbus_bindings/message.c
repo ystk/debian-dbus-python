@@ -32,7 +32,7 @@ static PyTypeObject MethodReturnMessageType, MethodCallMessageType;
 
 static inline int Message_Check(PyObject *o)
 {
-    return (o->ob_type == &MessageType)
+    return (Py_TYPE(o) == &MessageType)
             || PyObject_IsInstance(o, (PyObject *)&MessageType);
 }
 
@@ -53,7 +53,7 @@ static void Message_tp_dealloc(Message *self)
     if (self->msg) {
         dbus_message_unref(self->msg);
     }
-    self->ob_type->tp_free((PyObject *)self);
+    Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
 static PyObject *
@@ -67,6 +67,30 @@ Message_tp_new(PyTypeObject *type,
     if (!self) return NULL;
     self->msg = NULL;
     return (PyObject *)self;
+}
+
+static PyObject *
+MethodCallMessage_tp_repr(PyObject *self)
+{
+    DBusMessage *msg = ((Message *)self)->msg;
+    const char *destination = dbus_message_get_destination(msg);
+    const char *path = dbus_message_get_path(msg);
+    const char *interface = dbus_message_get_interface(msg);
+    const char *member = dbus_message_get_member(msg);
+
+    if (!path)
+        path = "n/a";
+    if (!interface)
+        interface = "n/a";
+    if (!member)
+        member = "n/a";
+    if (!destination)
+        destination = "n/a";
+
+    return PyUnicode_FromFormat(
+        "<%s path: %s, iface: %s, member: %s dest: %s>",
+        Py_TYPE(self)->tp_name,
+        path, interface, member, destination);
 }
 
 PyDoc_STRVAR(MethodCallMessage_tp_doc, "A method-call message.\n"
@@ -167,6 +191,29 @@ SignalMessage_tp_init(Message *self, PyObject *args, PyObject *kwargs)
         return -1;
     }
     return 0;
+}
+
+static PyObject *
+SignalMessage_tp_repr(PyObject *self)
+{
+    DBusMessage *msg = ((Message *)self)->msg;
+    const char *path = dbus_message_get_path(msg);
+    const char *interface = dbus_message_get_interface(msg);
+    const char *member = dbus_message_get_member(msg);
+    const char *destination = dbus_message_get_destination(msg);
+
+    if (!path)
+        path = "n/a";
+    if (!interface)
+        interface = "n/a";
+    if (!member)
+        member = "n/a";
+    if (!destination)
+        destination = "(broadcast)";
+
+    return PyUnicode_FromFormat("<%s path: %s, iface: %s, member: %s, dest: %s>",
+                                Py_TYPE(self)->tp_name,
+                                path, interface, member, destination);
 }
 
 PyDoc_STRVAR(ErrorMessage_tp_doc, "An error message.\n\n"
@@ -341,7 +388,7 @@ static PyObject *
 Message_get_type(Message *self, PyObject *unused UNUSED)
 {
     if (!self->msg) return DBusPy_RaiseUnusableMessage();
-    return PyInt_FromLong(dbus_message_get_type(self->msg));
+    return NATIVEINT_FROMLONG(dbus_message_get_type(self->msg));
 }
 
 PyDoc_STRVAR(Message_get_serial__doc__,
@@ -415,7 +462,7 @@ Message_get_member(Message *self, PyObject *unused UNUSED)
     if (!c_str) {
         Py_RETURN_NONE;
     }
-    return PyString_FromString(c_str);
+    return NATIVESTR_FROMSTR(c_str);
 }
 
 PyDoc_STRVAR(Message_has_member__doc__,
@@ -478,31 +525,29 @@ Message_get_path_decomposed(Message *self, PyObject *unused UNUSED)
 
     if (!ret) return NULL;
     if (!self->msg) {
-        Py_DECREF(ret);
+        Py_CLEAR(ret);
         return DBusPy_RaiseUnusableMessage();
     }
     if (!dbus_message_get_path_decomposed(self->msg, &paths)) {
-        Py_DECREF(ret);
+        Py_CLEAR(ret);
         return PyErr_NoMemory();
     }
     if (!paths) {
-        Py_DECREF(ret);
+        Py_CLEAR(ret);
         Py_RETURN_NONE;
     }
     for (ptr = paths; *ptr; ptr++) {
-        PyObject *str = PyString_FromString(*ptr);
+        PyObject *str = NATIVESTR_FROMSTR(*ptr);
 
         if (!str) {
-            Py_DECREF(ret);
-            ret = NULL;
+            Py_CLEAR(ret);
             break;
         }
         if (PyList_Append(ret, str) < 0) {
-            Py_DECREF(ret);
-            ret = NULL;
+            Py_CLEAR(ret);
             break;
         }
-        Py_DECREF(str);
+        Py_CLEAR(str);
         str = NULL;
     }
     dbus_free_string_array(paths);
@@ -578,7 +623,7 @@ Message_get_sender(Message *self, PyObject *unused UNUSED)
     if (!c_str) {
         Py_RETURN_NONE;
     }
-    return PyString_FromString(c_str);
+    return NATIVESTR_FROMSTR(c_str);
 }
 
 PyDoc_STRVAR(Message_has_sender__doc__,
@@ -624,7 +669,7 @@ Message_get_destination(Message *self, PyObject *unused UNUSED)
     if (!c_str) {
         Py_RETURN_NONE;
     }
-    return PyString_FromString(c_str);
+    return NATIVESTR_FROMSTR(c_str);
 }
 
 PyDoc_STRVAR(Message_has_destination__doc__,
@@ -669,7 +714,7 @@ Message_get_interface(Message *self, PyObject *unused UNUSED)
     if (!c_str) {
         Py_RETURN_NONE;
     }
-    return PyString_FromString(c_str);
+    return NATIVESTR_FROMSTR(c_str);
 }
 
 PyDoc_STRVAR(Message_has_interface__doc__,
@@ -714,7 +759,7 @@ Message_get_error_name(Message *self, PyObject *unused UNUSED)
     if (!c_str) {
         Py_RETURN_NONE;
     }
-    return PyString_FromString(c_str);
+    return NATIVESTR_FROMSTR(c_str);
 }
 
 PyDoc_STRVAR(Message_set_error_name__doc__,
@@ -810,8 +855,7 @@ static PyMethodDef Message_tp_methods[] = {
 };
 
 static PyTypeObject MessageType = {
-    PyObject_HEAD_INIT(NULL)
-    0,                         /*ob_size*/
+    PyVarObject_HEAD_INIT(NULL, 0)
     "dbus.lowlevel.Message",   /*tp_name*/
     sizeof(Message),     /*tp_basicsize*/
     0,                         /*tp_itemsize*/
@@ -852,8 +896,7 @@ static PyTypeObject MessageType = {
 };
 
 static PyTypeObject MethodCallMessageType = {
-    PyObject_HEAD_INIT(NULL)
-    0,                         /*ob_size*/
+    PyVarObject_HEAD_INIT(NULL, 0)
     "dbus.lowlevel.MethodCallMessage",  /*tp_name*/
     0,                         /*tp_basicsize*/
     0,                         /*tp_itemsize*/
@@ -862,7 +905,7 @@ static PyTypeObject MethodCallMessageType = {
     0,                         /*tp_getattr*/
     0,                         /*tp_setattr*/
     0,                         /*tp_compare*/
-    0,                         /*tp_repr*/
+    MethodCallMessage_tp_repr, /*tp_repr*/
     0,                         /*tp_as_number*/
     0,                         /*tp_as_sequence*/
     0,                         /*tp_as_mapping*/
@@ -894,8 +937,7 @@ static PyTypeObject MethodCallMessageType = {
 };
 
 static PyTypeObject MethodReturnMessageType = {
-    PyObject_HEAD_INIT(NULL)
-    0,                         /*ob_size*/
+    PyVarObject_HEAD_INIT(NULL, 0)
     "dbus.lowlevel.MethodReturnMessage",  /*tp_name*/
     0,                         /*tp_basicsize*/
     0,                         /*tp_itemsize*/
@@ -936,8 +978,7 @@ static PyTypeObject MethodReturnMessageType = {
 };
 
 static PyTypeObject SignalMessageType = {
-    PyObject_HEAD_INIT(NULL)
-    0,                         /*ob_size*/
+    PyVarObject_HEAD_INIT(NULL, 0)
     "dbus.lowlevel.SignalMessage",  /*tp_name*/
     0,                         /*tp_basicsize*/
     0,                         /*tp_itemsize*/
@@ -946,7 +987,7 @@ static PyTypeObject SignalMessageType = {
     0,                         /*tp_getattr*/
     0,                         /*tp_setattr*/
     0,                         /*tp_compare*/
-    0,                         /*tp_repr*/
+    SignalMessage_tp_repr,     /*tp_repr*/
     0,                         /*tp_as_number*/
     0,                         /*tp_as_sequence*/
     0,                         /*tp_as_mapping*/
@@ -978,8 +1019,7 @@ static PyTypeObject SignalMessageType = {
 };
 
 static PyTypeObject ErrorMessageType = {
-    PyObject_HEAD_INIT(NULL)
-    0,                         /*ob_size*/
+    PyVarObject_HEAD_INIT(NULL, 0)
     "dbus.lowlevel.ErrorMessage",  /*tp_name*/
     0,                         /*tp_basicsize*/
     0,                         /*tp_itemsize*/
@@ -1042,6 +1082,13 @@ dbus_py_init_message_types(void)
 dbus_bool_t
 dbus_py_insert_message_types(PyObject *this_module)
 {
+    /* PyModule_AddObject steals a ref */
+    Py_INCREF (&MessageType);
+    Py_INCREF (&MethodCallMessageType);
+    Py_INCREF (&MethodReturnMessageType);
+    Py_INCREF (&ErrorMessageType);
+    Py_INCREF (&SignalMessageType);
+
     if (PyModule_AddObject(this_module, "Message",
                          (PyObject *)&MessageType) < 0) return 0;
 

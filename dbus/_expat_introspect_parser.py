@@ -23,7 +23,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-from xml.parsers.expat import ExpatError, ParserCreate
+from xml.parsers.expat import ParserCreate
 from dbus.exceptions import IntrospectionParserException
 
 class _Parser(object):
@@ -81,5 +81,5 @@ def process_introspection_data(data):
     """
     try:
         return _Parser().parse(data)
-    except Exception, e:
+    except Exception as e:
         raise IntrospectionParserException('%s: %s' % (e.__class__, e))

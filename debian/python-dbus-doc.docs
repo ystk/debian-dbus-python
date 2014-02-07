@@ -1,7 +1,7 @@
-build-default/api
+build-doc/api
 doc/
-build-default/doc/
+build-doc/doc/
 NEWS
 README
-build-default/NEWS.html
-build-default/README.html
+build-doc/NEWS.html
+build-doc/README.html

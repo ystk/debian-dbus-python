@@ -23,7 +23,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-import sys
 import logging
 
 try:
@@ -33,16 +32,19 @@ except ImportError:
 
 import _dbus_bindings
 from dbus._expat_introspect_parser import process_introspection_data
-from dbus.exceptions import MissingReplyHandlerException, MissingErrorHandlerException, IntrospectionParserException, DBusException
+from dbus.exceptions import (
+    DBusException, IntrospectionParserException, MissingErrorHandlerException,
+    MissingReplyHandlerException)
 
 __docformat__ = 'restructuredtext'
 
 
 _logger = logging.getLogger('dbus.proxies')
 
-from _dbus_bindings import LOCAL_PATH, \
-                           BUS_DAEMON_NAME, BUS_DAEMON_PATH, BUS_DAEMON_IFACE,\
-                           INTROSPECTABLE_IFACE
+from _dbus_bindings import (
+    BUS_DAEMON_IFACE, BUS_DAEMON_NAME, BUS_DAEMON_PATH, INTROSPECTABLE_IFACE,
+    LOCAL_PATH)
+from dbus._compat import is_py2
 
 
 class _DeferredMethod:
@@ -57,7 +59,7 @@ class _DeferredMethod:
         self._block = block
 
     def __call__(self, *args, **keywords):
-        if (keywords.has_key('reply_handler') or
+        if ('reply_handler' in keywords or
             keywords.get('ignore_reply', False)):
             # defer the async call til introspection finishes
             self._append(self._proxy_method, args, keywords)
@@ -102,6 +104,7 @@ class _ProxyMethod:
         reply_handler = keywords.pop('reply_handler', None)
         error_handler = keywords.pop('error_handler', None)
         ignore_reply = keywords.pop('ignore_reply', False)
+        signature = keywords.pop('signature', None)
 
         if reply_handler is not None or error_handler is not None:
             if reply_handler is None:
@@ -114,18 +117,20 @@ class _ProxyMethod:
 
         dbus_interface = keywords.pop('dbus_interface', self._dbus_interface)
 
-        if dbus_interface is None:
-            key = self._method_name
-        else:
-            key = dbus_interface + '.' + self._method_name
-        introspect_sig = self._proxy._introspect_method_map.get(key, None)
+        if signature is None:
+            if dbus_interface is None:
+                key = self._method_name
+            else:
+                key = dbus_interface + '.' + self._method_name
+
+            signature = self._proxy._introspect_method_map.get(key, None)
 
         if ignore_reply or reply_handler is not None:
             self._connection.call_async(self._named_service,
                                         self._object_path,
                                         dbus_interface,
                                         self._method_name,
-                                        introspect_sig,
+                                        signature,
                                         args,
                                         reply_handler,
                                         error_handler,
@@ -135,27 +140,29 @@ class _ProxyMethod:
                                                   self._object_path,
                                                   dbus_interface,
                                                   self._method_name,
-                                                  introspect_sig,
+                                                  signature,
                                                   args,
                                                   **keywords)
 
     def call_async(self, *args, **keywords):
         reply_handler = keywords.pop('reply_handler', None)
         error_handler = keywords.pop('error_handler', None)
+        signature = keywords.pop('signature', None)
 
         dbus_interface = keywords.pop('dbus_interface', self._dbus_interface)
 
-        if dbus_interface:
-            key = dbus_interface + '.' + self._method_name
-        else:
-            key = self._method_name
-        introspect_sig = self._proxy._introspect_method_map.get(key, None)
+        if signature is None:
+            if dbus_interface:
+                key = dbus_interface + '.' + self._method_name
+            else:
+                key = self._method_name
+            signature = self._proxy._introspect_method_map.get(key, None)
 
         self._connection.call_async(self._named_service,
                                     self._object_path,
                                     dbus_interface,
                                     self._method_name,
-                                    introspect_sig,
+                                    signature,
                                     args,
                                     reply_handler,
                                     error_handler,
@@ -219,7 +226,7 @@ class ProxyObject(object):
         if kwargs:
             raise TypeError('ProxyObject.__init__ does not take these '
                             'keyword arguments: %s'
-                            % ', '.join(kwargs.iterkeys()))
+                            % ', '.join(kwargs.keys()))
 
         if follow_name_owner_changes:
             # we don't get the signals unless the Bus has a main loop
@@ -362,13 +369,15 @@ class ProxyObject(object):
                                       **keywords)
 
     def _Introspect(self):
+        kwargs = {}
+        if is_py2:
+            kwargs['utf8_strings'] = True
         return self._bus.call_async(self._named_service,
                                     self.__dbus_object_path__,
                                     INTROSPECTABLE_IFACE, 'Introspect', '', (),
                                     self._introspect_reply_handler,
                                     self._introspect_error_handler,
-                                    utf8_strings=True,
-                                    require_main_loop=False)
+                                    require_main_loop=False, **kwargs)
 
     def _introspect_execute_queue(self):
         # FIXME: potential to flood the bus
@@ -376,13 +385,14 @@ class ProxyObject(object):
         # and do one message per idle
         for (proxy_method, args, keywords) in self._pending_introspect_queue:
             proxy_method(*args, **keywords)
+        self._pending_introspect_queue = []
 
     def _introspect_reply_handler(self, data):
         self._introspect_lock.acquire()
         try:
             try:
                 self._introspect_method_map = process_introspection_data(data)
-            except IntrospectionParserException, e:
+            except IntrospectionParserException as e:
                 self._introspect_error_handler(e)
                 return
 

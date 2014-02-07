@@ -85,7 +85,7 @@ static dbus_bool_t
 DBusPyServer_set_auth_mechanisms(Server *self,
                                  PyObject *auth_mechanisms)
 {
-    PyObject *fast_seq;
+    PyObject *fast_seq = NULL, *references = NULL;
     Py_ssize_t length;
     Py_ssize_t i;
 
@@ -101,16 +101,29 @@ DBusPyServer_set_auth_mechanisms(Server *self,
     {
         const char *list[length + 1];
 
+        if (!(references = PyTuple_New(length)))
+            goto error;
+
         for (i = 0; i < length; ++i) {
-            PyObject *am;
+            PyObject *am, *am_as_bytes;
 
             am = PySequence_Fast_GET_ITEM(auth_mechanisms, i);
-            /* this supports either str or unicode, raising TypeError
-             * on failure */
-            list[i] = PyString_AsString(am);
+            if (!am) goto error;
 
+            if (PyUnicode_Check(am)) {
+                am_as_bytes = PyUnicode_AsUTF8String(am);
+                if (!am_as_bytes)
+                    goto error;
+            }
+            else {
+                am_as_bytes = am;
+                Py_INCREF(am_as_bytes);
+            }
+            list[i] = PyBytes_AsString(am_as_bytes);
             if (!list[i])
-                return FALSE;
+                goto error;
+
+            PyTuple_SET_ITEM(references, i, am_as_bytes);
         }
 
         list[length] = NULL;
@@ -120,7 +133,13 @@ DBusPyServer_set_auth_mechanisms(Server *self,
         Py_END_ALLOW_THREADS
     }
 
+    Py_CLEAR(fast_seq);
+    Py_CLEAR(references);
     return TRUE;
+  error:
+    Py_CLEAR(fast_seq);
+    Py_CLEAR(references);
+    return FALSE;
 }
 
 /* Return a new reference to a Python Server or subclass corresponding
@@ -183,21 +202,21 @@ DBusPyServer_new_connection_cb(DBusServer *server,
 
         conn_obj = PyObject_CallFunctionObjArgs((PyObject *)conn_class,
                 wrapper, ((Server*) self)->mainloop, NULL);
-        Py_DECREF(wrapper);
+        Py_CLEAR(wrapper);
 
         if (!conn_obj)
             goto out;
 
         result = PyObject_CallFunctionObjArgs(method, conn_obj, NULL);
-        Py_XDECREF (conn_obj);
+        Py_CLEAR (conn_obj);
 
         /* discard result if not NULL, and fall through regardless */
-        Py_XDECREF(result);
+        Py_CLEAR(result);
     }
 
 out:
-    Py_XDECREF(method);
-    Py_XDECREF(self);
+    Py_CLEAR(method);
+    Py_CLEAR(self);
 
     if (PyErr_Occurred())
         PyErr_Print();
@@ -329,9 +348,9 @@ DBusPyServer_NewConsumingDBusServer(PyTypeObject *cls,
 
 err:
     DBG("Failed to construct Server from DBusServer at %p", server);
-    Py_XDECREF(mainloop);
-    Py_XDECREF(self);
-    Py_XDECREF(ref);
+    Py_CLEAR(mainloop);
+    Py_CLEAR(self);
+    Py_CLEAR(ref);
 
     if (server) {
         Py_BEGIN_ALLOW_THREADS
@@ -385,6 +404,7 @@ Server_tp_new(PyTypeObject *cls, PyObject *args, PyObject *kwargs)
 
     self = DBusPyServer_NewConsumingDBusServer(cls, server, conn_class,
             mainloop, auth_mechanisms);
+    ((Server *)self)->weaklist = NULL;
     TRACE(self);
 
     return self;
@@ -414,7 +434,7 @@ static void Server_tp_dealloc(Server *self)
         Py_END_ALLOW_THREADS
     }
 
-    Py_DECREF(self->mainloop);
+    Py_CLEAR(self->mainloop);
 
     /* make sure to do this last to preserve the invariant that
      * self->server is always non-NULL for any referenced Server.
@@ -429,7 +449,7 @@ static void Server_tp_dealloc(Server *self)
 
     DBG("Server at %p: freeing self", self);
     PyErr_Restore(et, ev, etb);
-    (self->ob_type->tp_free)((PyObject *)self);
+    (Py_TYPE(self)->tp_free)((PyObject *)self);
 }
 
 PyDoc_STRVAR(Server_disconnect__doc__,
@@ -462,7 +482,7 @@ Server_get_address(Server *self, PyObject *args UNUSED)
     address = dbus_server_get_address(self->server);
     Py_END_ALLOW_THREADS
 
-    return PyString_FromString(address);
+    return NATIVESTR_FROMSTR(address);
 }
 
 PyDoc_STRVAR(Server_get_id__doc__,
@@ -479,7 +499,7 @@ Server_get_id(Server *self, PyObject *args UNUSED)
     id = dbus_server_get_id(self->server);
     Py_END_ALLOW_THREADS
 
-    return PyString_FromString(id);
+    return NATIVESTR_FROMSTR(id);
 }
 
 PyDoc_STRVAR(Server_get_is_connected__doc__,
@@ -511,8 +531,7 @@ struct PyMethodDef DBusPyServer_tp_methods[] = {
 };
 
 PyTypeObject DBusPyServer_Type = {
-    PyObject_HEAD_INIT(NULL)
-    0,                      /*ob_size*/
+    PyVarObject_HEAD_INIT(NULL, 0)
     "_dbus_bindings._Server",/*tp_name*/
     sizeof(Server),         /*tp_basicsize*/
     0,                      /*tp_itemsize*/
@@ -532,7 +551,11 @@ PyTypeObject DBusPyServer_Type = {
     0,                      /*tp_getattro*/
     0,                      /*tp_setattro*/
     0,                      /*tp_as_buffer*/
+#ifdef PY3
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+#else
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_WEAKREFS | Py_TPFLAGS_BASETYPE,
+#endif
     Server_tp_doc,          /*tp_doc*/
     0,                      /*tp_traverse*/
     0,                      /*tp_clear*/
@@ -572,6 +595,8 @@ dbus_py_init_server_types(void)
 dbus_bool_t
 dbus_py_insert_server_types(PyObject *this_module)
 {
+    /* PyModule_AddObject steals a ref */
+    Py_INCREF (&DBusPyServer_Type);
     if (PyModule_AddObject(this_module, "_Server",
                            (PyObject *)&DBusPyServer_Type) < 0) return FALSE;
 

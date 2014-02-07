@@ -5,7 +5,7 @@ ACLOCAL_AMFLAGS = -I m4
 
 # the api, doc, include subdirs don't need their own Makefile.am
 # the dbus subdir is handled with non-recursive make because of #12741
-SUBDIRS = _dbus_bindings _dbus_glib_bindings examples m4 test tools
+SUBDIRS = _dbus_bindings _dbus_glib_bindings examples m4 test tools .
 
 CLEANFILES =
 EXTRA_DIST = \
@@ -18,17 +18,16 @@ EXTRA_DIST = \
 # === dbus package ===
 
 nobase_python_PYTHON = \
-    dbus_bindings.py \
     dbus/bus.py \
     dbus/connection.py \
-    dbus/dbus_bindings.py \
+    dbus/_compat.py \
     dbus/_dbus.py \
     dbus/_version.py \
     dbus/decorators.py \
     dbus/exceptions.py \
     dbus/_expat_introspect_parser.py \
+    dbus/gi_service.py \
     dbus/glib.py \
-    dbus/gobject_service.py \
     dbus/__init__.py \
     dbus/lowlevel.py \
     dbus/mainloop/__init__.py \
@@ -37,6 +36,12 @@ nobase_python_PYTHON = \
     dbus/server.py \
     dbus/service.py \
     dbus/types.py
+
+if !HAVE_PYTHON_3
+nobase_python_PYTHON += \
+    dbus/gobject_service.py \
+    $(NULL)
+endif
 
 check_py_sources = $(nobase_python_PYTHON)
 include $(top_srcdir)/tools/check-coding-style.mk
@@ -62,15 +67,23 @@ cross-test-client:
 dist-hook:
 	chmod u+w $(distdir)/ChangeLog
 	if test -d $(top_srcdir)/.git; then \
-		if git log --stat > $(distdir)/ChangeLog; then \
+		if GIT_DIR=$(top_srcdir)/.git git log --stat > $(distdir)/ChangeLog; then \
 			: ; \
 		else \
-			git log > $(distdir)/ChangeLog; \
+			GIT_DIR=$(top_srcdir)/.git git log > $(distdir)/ChangeLog; \
 		fi; \
 	fi
 
-TXT_RSTDOCS = doc/tutorial.txt doc/API_CHANGES.txt doc/HACKING.txt
-RSTDOCS = README NEWS TODO
+TXT_RSTDOCS = \
+	doc/tutorial.txt \
+	doc/API_CHANGES.txt \
+	doc/HACKING.txt \
+	doc/PY3PORT.txt \
+	$(NULL)
+RSTDOCS = \
+	README \
+	NEWS \
+	$(NULL)
 dist_doc_DATA = $(TXT_RSTDOCS) $(RSTDOCS)
 
 maintainer-upload:
@@ -83,11 +96,11 @@ maintainer-update-website: _maintainer-update-apidocs \
 if ENABLE_DOCS
 _maintainer-update-htmldocs: $(HTML_TXT_RSTDOCS) $(HTML_RSTDOCS)
 	rsync -rtvzPp --chmod=Dg+s,ug+rwX,o=rX doc \
-	$(RSTDOCS) $(HTML_RSTDOCS) \
+	$(patsubst %,$(srcdir)/%,$(RSTDOCS)) $(HTML_RSTDOCS) \
 	dbus.freedesktop.org:/srv/dbus.freedesktop.org/www/doc/dbus-python/
 
-HTML_TXT_RSTDOCS = doc/tutorial.html doc/API_CHANGES.html doc/HACKING.html
-HTML_RSTDOCS = README.html NEWS.html TODO.html
+HTML_TXT_RSTDOCS = $(patsubst %.txt,%.html,$(TXT_RSTDOCS))
+HTML_RSTDOCS = $(patsubst %,%.html,$(RSTDOCS))
 nodist_doc_DATA = $(HTML_TXT_RSTDOCS) $(HTML_RSTDOCS)
 
 CLEANFILES += $(nodist_doc_DATA)
@@ -127,7 +140,7 @@ api api/index.html: $(nobase_python_PYTHON) \
 	$(PYTHON) -Wignore::DeprecationWarning \
 	$(EPYDOC) -o $(abs_top_builddir)/api --html \
 		--docformat restructuredtext -v \
-		`find dbus -name '*.py' | grep -v dbus_bindings \
+		`find dbus -name '*.py' \
 			| sed -e 's#/__init__\.py##g' \
 				-e 's/\.py\>//g' -e 's#/#.#'g` \
 		|| { rm -rf api; exit 1; }

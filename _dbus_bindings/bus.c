@@ -42,7 +42,14 @@ DBusPyConnection_NewForBus(PyTypeObject *cls, PyObject *args, PyObject *kwargs)
 
     dbus_error_init(&error);
 
-    if (first && PyString_Check(first)) {
+    if (first &&
+#ifdef PY3
+        PyUnicode_Check(first)
+#else
+        PyBytes_Check(first)
+#endif
+        )
+    {
         dbus_bool_t ret;
 
         /* It's a custom address. First connect to it, then register. */
@@ -56,13 +63,14 @@ DBusPyConnection_NewForBus(PyTypeObject *cls, PyObject *args, PyObject *kwargs)
         Py_END_ALLOW_THREADS
         if (!ret) {
             DBusPyException_ConsumeError(&error);
-            Py_DECREF(self);
+            Py_CLEAR(self);
             return NULL;
         }
 
         return (PyObject *)self;
     }
-    else if (!first || PyInt_Check(first)) {
+    else if (!first || INTORLONG_CHECK(first))
+    {
         long type;
         PyObject *libdbusconn;
         PyObject *new_args;
@@ -73,7 +81,10 @@ DBusPyConnection_NewForBus(PyTypeObject *cls, PyObject *args, PyObject *kwargs)
         DBUS_BUS_SESSION. */
 
         if (first) {
-            type = PyInt_AsLong(first);
+            /* on Python 2 this accepts either int or long */
+            type = PyLong_AsLong(first);
+            if (type == -1 && PyErr_Occurred())
+                return NULL;
 
             if (type != DBUS_BUS_SESSION && type != DBUS_BUS_SYSTEM
                 && type != DBUS_BUS_STARTER) {
@@ -101,7 +112,7 @@ DBusPyConnection_NewForBus(PyTypeObject *cls, PyObject *args, PyObject *kwargs)
             return NULL;
 
         new_args = PyTuple_Pack(2, libdbusconn, mainloop ? mainloop : Py_None);
-        Py_DECREF(libdbusconn);
+        Py_CLEAR(libdbusconn);
 
         if (!new_args) {
             return NULL;
@@ -110,14 +121,14 @@ DBusPyConnection_NewForBus(PyTypeObject *cls, PyObject *args, PyObject *kwargs)
         new_kwargs = PyDict_New();
 
         if (!new_kwargs) {
-            Py_DECREF(new_args);
+            Py_CLEAR(new_args);
             return NULL;
         }
 
         self = (Connection *)(DBusPyConnection_Type.tp_new)(cls, new_args,
                 new_kwargs);
-        Py_DECREF(new_args);
-        Py_DECREF(new_kwargs);
+        Py_CLEAR(new_args);
+        Py_CLEAR(new_kwargs);
 
         return (PyObject *)self;    /* whether NULL or not */
     }
@@ -142,7 +153,7 @@ DBusPyConnection_GetUniqueName(Connection *self, PyObject *args UNUSED)
         return DBusPyException_SetString("This connection has no unique name "
                                          "yet");
     }
-    return PyString_FromString(name);
+    return NATIVESTR_FROMSTR(name);
 }
 
 PyObject *

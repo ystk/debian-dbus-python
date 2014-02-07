@@ -37,18 +37,18 @@ import_exception(void)
         return TRUE;
     }
 
-    name = PyString_FromString("dbus.exceptions");
+    name = NATIVESTR_FROMSTR("dbus.exceptions");
     if (name == NULL) {
         return FALSE;
     }
     exceptions = PyImport_Import(name);
-    Py_DECREF(name);
+    Py_CLEAR(name);
     if (exceptions == NULL) {
         return FALSE;
     }
     imported_dbus_exception = PyObject_GetAttrString(exceptions,
                                                      "DBusException");
-    Py_DECREF(exceptions);
+    Py_CLEAR(exceptions);
 
     return (imported_dbus_exception != NULL);
 }
@@ -75,14 +75,19 @@ DBusPyException_ConsumeError(DBusError *error)
                                       "s",
                                       error->message ? error->message
                                                      : "");
+
+    if (!exc_value) {
+        goto finally;
+    }
+
     if (error->name) {
-        PyObject *name = PyString_FromString(error->name);
+        PyObject *name = NATIVESTR_FROMSTR(error->name);
         int ret;
 
         if (!name)
             goto finally;
         ret = PyObject_SetAttrString(exc_value, "_dbus_error_name", name);
-        Py_DECREF(name);
+        Py_CLEAR(name);
         if (ret < 0) {
             goto finally;
         }
@@ -91,7 +96,7 @@ DBusPyException_ConsumeError(DBusError *error)
     PyErr_SetObject(imported_dbus_exception, exc_value);
 
 finally:
-    Py_XDECREF(exc_value);
+    Py_CLEAR(exc_value);
     dbus_error_free(error);
     return NULL;
 }

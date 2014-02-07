@@ -26,26 +26,20 @@ __docformat__ = 'reStructuredText'
 import logging
 import weakref
 
-from _dbus_bindings import validate_interface_name, validate_member_name,\
-                           validate_bus_name, validate_object_path,\
-                           validate_error_name,\
-                           BUS_SESSION, BUS_STARTER, BUS_SYSTEM, \
-                           DBUS_START_REPLY_SUCCESS, \
-                           DBUS_START_REPLY_ALREADY_RUNNING, \
-                           BUS_DAEMON_NAME, BUS_DAEMON_PATH, BUS_DAEMON_IFACE,\
-                           NAME_FLAG_ALLOW_REPLACEMENT, \
-                           NAME_FLAG_DO_NOT_QUEUE, \
-                           NAME_FLAG_REPLACE_EXISTING, \
-                           RELEASE_NAME_REPLY_NON_EXISTENT, \
-                           RELEASE_NAME_REPLY_NOT_OWNER, \
-                           RELEASE_NAME_REPLY_RELEASED, \
-                           REQUEST_NAME_REPLY_ALREADY_OWNER, \
-                           REQUEST_NAME_REPLY_EXISTS, \
-                           REQUEST_NAME_REPLY_IN_QUEUE, \
-                           REQUEST_NAME_REPLY_PRIMARY_OWNER
+from _dbus_bindings import (
+    BUS_DAEMON_IFACE, BUS_DAEMON_NAME, BUS_DAEMON_PATH, BUS_SESSION,
+    BUS_STARTER, BUS_SYSTEM, DBUS_START_REPLY_ALREADY_RUNNING,
+    DBUS_START_REPLY_SUCCESS, NAME_FLAG_ALLOW_REPLACEMENT,
+    NAME_FLAG_DO_NOT_QUEUE, NAME_FLAG_REPLACE_EXISTING,
+    RELEASE_NAME_REPLY_NON_EXISTENT, RELEASE_NAME_REPLY_NOT_OWNER,
+    RELEASE_NAME_REPLY_RELEASED, REQUEST_NAME_REPLY_ALREADY_OWNER,
+    REQUEST_NAME_REPLY_EXISTS, REQUEST_NAME_REPLY_IN_QUEUE,
+    REQUEST_NAME_REPLY_PRIMARY_OWNER, validate_bus_name, validate_error_name,
+    validate_interface_name, validate_member_name, validate_object_path)
 from dbus.connection import Connection
 from dbus.exceptions import DBusException
 from dbus.lowlevel import HANDLER_RESULT_NOT_YET_HANDLED
+from dbus._compat import is_py2
 
 
 _NAME_OWNER_CHANGE_MATCH = ("type='signal',sender='%s',"
@@ -84,13 +78,16 @@ class NameOwnerWatch(object):
                                                    BUS_DAEMON_NAME,
                                                    BUS_DAEMON_PATH,
                                                    arg0=bus_name)
+        keywords = {}
+        if is_py2:
+            keywords['utf8_strings'] = True
         self._pending_call = bus_conn.call_async(BUS_DAEMON_NAME,
                                                  BUS_DAEMON_PATH,
                                                  BUS_DAEMON_IFACE,
                                                  'GetNameOwner',
                                                  's', (bus_name,),
                                                  callback, error_cb,
-                                                 utf8_strings=True)
+                                                 **keywords)
 
     def cancel(self):
         if self._match is not None:
@@ -176,7 +173,7 @@ class BusConnection(Connection):
             and bus_name != BUS_DAEMON_NAME):
             try:
                 return self.get_name_owner(bus_name)
-            except DBusException, e:
+            except DBusException as e:
                 if e.get_dbus_name() != _NAME_HAS_NO_OWNER:
                     raise
                 # else it doesn't exist: try to start it
@@ -237,7 +234,7 @@ class BusConnection(Connection):
             bus_name = named_service
         if kwargs:
             raise TypeError('get_object does not take these keyword '
-                            'arguments: %s' % ', '.join(kwargs.iterkeys()))
+                            'arguments: %s' % ', '.join(kwargs.keys()))
 
         return self.ProxyObjectClass(self, bus_name, object_path,
                                      introspect=introspect,
@@ -328,9 +325,12 @@ class BusConnection(Connection):
         :Returns: a dbus.Array of dbus.UTF8String
         :Since: 0.81.0
         """
+        keywords = {}
+        if is_py2:
+            keywords['utf8_strings'] = True
         return self.call_blocking(BUS_DAEMON_NAME, BUS_DAEMON_PATH,
                                   BUS_DAEMON_IFACE, 'ListNames',
-                                  '', (), utf8_strings=True)
+                                  '', (), **keywords)
 
     def list_activatable_names(self):
         """Return a list of all names that can be activated on the bus.
@@ -338,9 +338,12 @@ class BusConnection(Connection):
         :Returns: a dbus.Array of dbus.UTF8String
         :Since: 0.81.0
         """
+        keywords = {}
+        if is_py2:
+            keywords['utf8_strings'] = True
         return self.call_blocking(BUS_DAEMON_NAME, BUS_DAEMON_PATH,
-                                  BUS_DAEMON_IFACE, 'ListNames',
-                                  '', (), utf8_strings=True)
+                                  BUS_DAEMON_IFACE, 'ListActivatableNames',
+                                  '', (), **keywords)
 
     def get_name_owner(self, bus_name):
         """Return the unique connection name of the primary owner of the
@@ -349,10 +352,13 @@ class BusConnection(Connection):
         :Raises `DBusException`: if the `bus_name` has no owner
         :Since: 0.81.0
         """
+        keywords = {}
+        if is_py2:
+            keywords['utf8_strings'] = True
         validate_bus_name(bus_name, allow_unique=False)
         return self.call_blocking(BUS_DAEMON_NAME, BUS_DAEMON_PATH,
                                   BUS_DAEMON_IFACE, 'GetNameOwner',
-                                  's', (bus_name,), utf8_strings=True)
+                                  's', (bus_name,), **keywords)
 
     def watch_name_owner(self, bus_name, callback):
         """Watch the unique connection name of the primary owner of the

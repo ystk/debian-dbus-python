@@ -1,12 +1,14 @@
 pyexec_LTLIBRARIES = _dbus_bindings.la
 
 AM_CPPFLAGS = -I$(top_srcdir)/include $(DBUS_CFLAGS) $(PYTHON_INCLUDES)
-AM_LDFLAGS = -module -avoid-version -export-symbols-regex init_dbus_bindings \
+AM_LDFLAGS = -module -avoid-version \
+	     -export-symbols-regex \(PyInit__\|init_\)dbus_bindings \
 	     $(DBUS_LIBS)
 _dbus_bindings_la_SOURCES = \
 			    abstract.c \
 			    bus.c \
 			    bytes.c \
+			    compat-internal.h \
 			    conn.c \
 			    conn-internal.h \
 			    conn-methods.c \
@@ -17,6 +19,7 @@ _dbus_bindings_la_SOURCES = \
 			    float.c \
 			    generic.c \
 			    int.c \
+			    unixfd.c \
 			    libdbusconn.c \
 			    mainloop.c \
 			    message-append.c \

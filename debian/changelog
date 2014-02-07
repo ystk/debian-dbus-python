@@ -1,8 +1,93 @@
-dbus-python (0.83.1-1) UNRELEASED; urgency=low
+dbus-python (1.1.1-1) unstable; urgency=low
+
+  * New upstream version
+    - fixes type-signature guessing when an ObjectPath is given (LP: #1008898)
+  * Increase dbus build-dependency to the recommended version, 1.6
+  * Include /usr/share/dpkg/default.mk for recommended build flags
+
+ -- Simon McVittie <smcv@debian.org>  Mon, 25 Jun 2012 17:35:50 +0100
+
+dbus-python (1.1.0-1) unstable; urgency=low
+
+  * New upstream release
+    - dbus.gobject_service is compatible with 0.x again (Closes: #670516)
+  * Fix recommendation for a main loop package: the Python 3 Qt main loop
+    glue is python3-dbus.mainloop.qt, not python-qt4-dbus
+  * Use dh_python3 (Closes: #672189)
+  * Switch variable names in debian/rules to be more like the proposed
+    Python package style guide
+  * Build-depend on pygi so epydoc can introspect dbus.gi_service
+  * Merge from experimental to unstable
+  * Remove duplicate Priority from -dev
+  * Standards-Version: 3.9.3 (no changes)
+
+ -- Simon McVittie <smcv@debian.org>  Wed, 09 May 2012 16:37:43 +0100
+
+dbus-python (1.0.0-1) experimental; urgency=low
+
+  * New upstream version 1.0.0
+    - increase Python requirement to 2.6
+    - build for Python 3 too
+    - split python-dbus-dev into a separate package to be shared between
+      versions
+    - make python-dbus depend on python-dbus-dev for now, to preserve
+      historical functionality (but packages which use it, like PyQt, should
+      switch to depending on it explicitly)
+
+ -- Simon McVittie <smcv@debian.org>  Tue, 24 Jan 2012 21:02:34 +0000
+
+dbus-python (0.84.0-3) unstable; urgency=low
+
+  * Drop obsolete recommendation of python-gtk, which hasn't provided the
+    GLib main loop since before squeeze. Allow python-gi (also GLib main loop)
+    or python-qt4-dbus (Qt main loop) to satisfy the dependency instead
+    (Closes: #656230)
+  * Move to debhelper 9 compat and use dh
+
+ -- Simon McVittie <smcv@debian.org>  Tue, 24 Jan 2012 20:38:03 +0000
+
+dbus-python (0.84.0-2) unstable; urgency=low
+
+  * Separate build-arch from build-indep, and do an extra build pass with the
+    default version of Python to build the documentation
+  * Apply patch from Barry Warsaw to switch to dh_python2
+    (Closes: #634346, #634859)
+  * Mark the current version of python-qt4-dbus as broken by this version
+    (assuming that 4.8.3-3 will fix #634860)
+
+ -- Simon McVittie <smcv@debian.org>  Mon, 25 Jul 2011 12:51:22 +0100
+
+dbus-python (0.84.0-1) unstable; urgency=low
+
+  * Merge experimental into unstable
+  * Move dbus-python to git
+  * New upstream version 0.84.0
+  * Standards-Version: 3.9.2 (no changes)
+
+ -- Simon McVittie <smcv@debian.org>  Wed, 25 May 2011 13:06:47 +0100
+
+dbus-python (0.83.2-1) experimental; urgency=low
+
+  * New upstream release
+    - explicitly depend on libdbus-1-dev, and use the recommended
+      version (from experimental)
+  * Standards-Version: 3.9.1
+    - add Homepage, Vcs-Svn, Vcs-Browser
+    - move versioned Conflicts on gnome-osd, gajim to Breaks
+    - put python-dbus-dbg in the debug section
+  * Update source format to 3.0 (quilt)
+    - drop cdbs dependency, we were only using it for the simple-patch-system
+  * Require debhelper 8
+    - use dh_prep instead of dh_clean -k
+  * Remove now-unused lintian override for package-contains-empty-directory
+
+ -- Simon McVittie <smcv@debian.org>  Thu, 02 Dec 2010 18:11:33 +0000
+
+dbus-python (0.83.1-1) unstable; urgency=low
 
   * New upstream release
 
- -- Simon McVittie <smcv@debian.org>  Thu, 18 Feb 2010 17:49:50 +0000
+ -- Simon McVittie <smcv@debian.org>  Thu, 18 Feb 2010 18:12:03 +0000
 
 dbus-python (0.83.0-1) unstable; urgency=low
 

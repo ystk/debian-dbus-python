@@ -26,6 +26,7 @@
 #include "types-internal.h"
 #include <structmember.h>
 
+#ifndef PY3
 /* UTF-8 string representation ====================================== */
 
 PyDoc_STRVAR(UTF8String_tp_doc,
@@ -77,13 +78,12 @@ UTF8String_tp_new(PyTypeObject *cls, PyObject *args, PyObject *kwargs)
                                      &str, &variantness)) return NULL;
     unicode = PyUnicode_DecodeUTF8(str, strlen(str), NULL);
     if (!unicode) return NULL;
-    Py_DECREF(unicode);
+    Py_CLEAR(unicode);
     return (DBusPyStrBase_Type.tp_new)(cls, args, kwargs);
 }
 
 PyTypeObject DBusPyUTF8String_Type = {
-    PyObject_HEAD_INIT(DEFERRED_ADDRESS(&PyType_Type))
-    0,
+    PyVarObject_HEAD_INIT(DEFERRED_ADDRESS(&PyType_Type), 0)
     "dbus.UTF8String",
     0,
     0,
@@ -122,6 +122,7 @@ PyTypeObject DBusPyUTF8String_Type = {
     0,                                      /* tp_alloc */
     UTF8String_tp_new,                      /* tp_new */
 };
+#endif  /* !PY3 */
 
 /* Object path ====================================================== */
 
@@ -161,8 +162,7 @@ ObjectPath_tp_new(PyTypeObject *cls, PyObject *args, PyObject *kwargs)
 }
 
 PyTypeObject DBusPyObjectPath_Type = {
-    PyObject_HEAD_INIT(DEFERRED_ADDRESS(&PyType_Type))
-    0,
+    PyVarObject_HEAD_INIT(DEFERRED_ADDRESS(&PyType_Type), 0)
     "dbus.ObjectPath",
     0,
     0,
@@ -275,23 +275,22 @@ String_tp_repr(PyObject *self)
         return NULL;
     }
     if (((DBusPyString *)self)->variant_level > 0) {
-        my_repr = PyString_FromFormat("%s(%s, variant_level=%ld)",
-                                      self->ob_type->tp_name,
-                                      PyString_AS_STRING(parent_repr),
-                                      ((DBusPyString *)self)->variant_level);
+        my_repr = PyUnicode_FromFormat("%s(%V, variant_level=%ld)",
+                                       Py_TYPE(self)->tp_name,
+                                       REPRV(parent_repr),
+                                       ((DBusPyString *)self)->variant_level);
     }
     else {
-        my_repr = PyString_FromFormat("%s(%s)", self->ob_type->tp_name,
-                                      PyString_AS_STRING(parent_repr));
+        my_repr = PyUnicode_FromFormat("%s(%V)", Py_TYPE(self)->tp_name,
+                                       REPRV(parent_repr));
     }
     /* whether my_repr is NULL or not: */
-    Py_DECREF(parent_repr);
+    Py_CLEAR(parent_repr);
     return my_repr;
 }
 
 PyTypeObject DBusPyString_Type = {
-    PyObject_HEAD_INIT(DEFERRED_ADDRESS(&PyType_Type))
-    0,
+    PyVarObject_HEAD_INIT(DEFERRED_ADDRESS(&PyType_Type), 0)
     "dbus.String",
     sizeof(DBusPyString),
     0,
@@ -346,17 +345,15 @@ dbus_py_init_string_types(void)
     if (PyType_Ready(&DBusPyString_Type) < 0) return 0;
     DBusPyString_Type.tp_print = NULL;
 
+#ifndef PY3
     DBusPyUTF8String_Type.tp_base = &DBusPyStrBase_Type;
     if (PyType_Ready(&DBusPyUTF8String_Type) < 0) return 0;
     DBusPyUTF8String_Type.tp_print = NULL;
+#endif
 
     DBusPyObjectPath_Type.tp_base = &DBusPyStrBase_Type;
     if (PyType_Ready(&DBusPyObjectPath_Type) < 0) return 0;
     DBusPyObjectPath_Type.tp_print = NULL;
-
-    DBusPyBoolean_Type.tp_base = &DBusPyIntBase_Type;
-    if (PyType_Ready(&DBusPyBoolean_Type) < 0) return 0;
-    DBusPyBoolean_Type.tp_print = NULL;
 
     return 1;
 }
@@ -364,15 +361,19 @@ dbus_py_init_string_types(void)
 dbus_bool_t
 dbus_py_insert_string_types(PyObject *this_module)
 {
+    /* PyModule_AddObject steals a ref */
     Py_INCREF(&DBusPyObjectPath_Type);
-    Py_INCREF(&DBusPyUTF8String_Type);
     Py_INCREF(&DBusPyString_Type);
     if (PyModule_AddObject(this_module, "ObjectPath",
                            (PyObject *)&DBusPyObjectPath_Type) < 0) return 0;
-    if (PyModule_AddObject(this_module, "UTF8String",
-                           (PyObject *)&DBusPyUTF8String_Type) < 0) return 0;
     if (PyModule_AddObject(this_module, "String",
                            (PyObject *)&DBusPyString_Type) < 0) return 0;
+
+#ifndef PY3
+    Py_INCREF(&DBusPyUTF8String_Type);
+    if (PyModule_AddObject(this_module, "UTF8String",
+                           (PyObject *)&DBusPyUTF8String_Type) < 0) return 0;
+#endif
 
     return 1;
 }
