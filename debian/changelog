@@ -1,3 +1,22 @@
+dbus-python (1.2.0-2) unstable; urgency=low
+
+  * Canonicalize Vcs-Git
+  * Standards-Version: 3.9.4 (no further changes)
+  * Automake 1.12.6 changed the default installation directory.
+    Force pythondir/pyexecdir instead of taking the default, fixing FTBFS
+    (Closes: #710926)
+
+ -- Simon McVittie <smcv@debian.org>  Mon, 03 Jun 2013 18:28:49 +0100
+
+dbus-python (1.2.0-1) unstable; urgency=low
+
+  * Check for sysconfig EXT_SUFFIX (for Python 3.3), falling back to SO if
+    not found (for Python 3.2) (Closes: #707139)
+  * New upstream release
+    - Unicode in exceptions works better (LP: #846044)
+
+ -- Simon McVittie <smcv@debian.org>  Wed, 08 May 2013 08:58:16 +0100
+
 dbus-python (1.1.1-1) unstable; urgency=low
 
   * New upstream version

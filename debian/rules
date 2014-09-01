@@ -53,12 +53,18 @@ override_dh_auto_install-arch:
 			--arch \
 			--builddirectory=build-$$x \
 			--destdir=debian/tmp \
+			-- \
+			pyexecdir='$${pythondir}' \
+			pythondir='$${libdir}'/python$$x/dist-packages \
 			; \
 		PYTHON=/usr/bin/python$$x-dbg \
 		dh_auto_install \
 			--arch \
 			--builddirectory=build-$$x-dbg \
 			--destdir=debian/tmp-dbg \
+			-- \
+			pyexecdir='$${pythondir}' \
+			pythondir='$${libdir}'/python$$x/dist-packages \
 			; \
 		install debian/tmp-dbg/usr/lib/python$$x/dist-packages/_dbus_bindings.so \
 			debian/tmp/usr/lib/python$$x/dist-packages/_dbus_bindings_d.so; \
@@ -71,8 +77,11 @@ override_dh_auto_install-arch:
 			--arch \
 			--builddirectory=build-$$x \
 			--destdir=debian/tmp \
+			-- \
+			pyexecdir='$${pythondir}' \
+			pythondir='$${libdir}/python3/dist-packages' \
 			; \
-		so=`/usr/bin/python$$x -c "print(__import__('sysconfig').get_config_var('SO'))"`; \
+		so=`/usr/bin/python$$x -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX') or sysconfig.get_config_var('SO'))"`; \
 		mv debian/tmp/usr/lib/python3/dist-packages/_dbus_bindings.so \
 			debian/tmp/usr/lib/python3/dist-packages/_dbus_bindings$$so; \
 		mv debian/tmp/usr/lib/python3/dist-packages/_dbus_glib_bindings.so \
@@ -82,8 +91,11 @@ override_dh_auto_install-arch:
 			--arch \
 			--builddirectory=build-$$x-dbg \
 			--destdir=debian/tmp-dbg \
+			-- \
+			pyexecdir='$${pythondir}' \
+			pythondir='$${libdir}/python3/dist-packages' \
 			; \
-		so=`/usr/bin/python$$x-dbg -c "print(__import__('sysconfig').get_config_var('SO'))"`; \
+		so=`/usr/bin/python$$x-dbg -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX') or sysconfig.get_config_var('SO'))"`; \
 		mv debian/tmp-dbg/usr/lib/python3/dist-packages/_dbus_bindings.so \
 			debian/tmp-dbg/usr/lib/python3/dist-packages/_dbus_bindings$$so; \
 		mv debian/tmp-dbg/usr/lib/python3/dist-packages/_dbus_glib_bindings.so \

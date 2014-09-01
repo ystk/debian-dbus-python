@@ -22,11 +22,11 @@ Build-Depends: autoconf,
                xmlto
 Build-Depends-Indep: python-docutils,
                      python-epydoc (>= 3.0~beta1)
-Standards-Version: 3.9.3
+Standards-Version: 3.9.4
 X-Python-Version: >= 2.6
 X-Python3-Version: >= 3.2
 Homepage: http://www.freedesktop.org/wiki/Software/DBusBindings#Python
-Vcs-Git: git://anonscm.debian.org/git/pkg-utopia/dbus-python.git
+Vcs-Git: git://anonscm.debian.org/pkg-utopia/dbus-python.git
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=pkg-utopia/dbus-python.git
 
 Package: python-dbus
